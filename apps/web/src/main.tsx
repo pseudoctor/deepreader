@@ -36,6 +36,7 @@ type ObsidianExportResult = {
 type DeepReadingDesktopApi = {
   platform: string;
   selectWorkspaceFolder: () => Promise<string | null>;
+  selectObsidianFolder: () => Promise<string | null>;
 };
 
 declare global {
@@ -75,6 +76,7 @@ const translations = {
     status: "Status",
     export: "Export",
     obsidianFolder: "Obsidian folder",
+    selectObsidianFolder: "Choose folder",
     obsidianFolderPlaceholder: "/Users/me/ObsidianVault/Reading/book-name",
     exportToObsidian: "Export to Obsidian",
     noWorkspaceLoaded: "No workspace loaded",
@@ -116,6 +118,7 @@ const translations = {
     failedLoadWorkspace: "Failed to load workspace",
     failedLoadChapter: "Failed to load chapter",
     failedSelectWorkspace: "Failed to choose workspace folder",
+    failedSelectObsidianFolder: "Failed to choose Obsidian folder",
     failedUpdateState: "Failed to update state",
     failedSaveNote: "Failed to save note",
     failedSaveReviewCard: "Failed to save review card",
@@ -150,6 +153,7 @@ const translations = {
     status: "状态",
     export: "导出",
     obsidianFolder: "Obsidian 文件夹",
+    selectObsidianFolder: "选择文件夹",
     obsidianFolderPlaceholder: "/Users/me/ObsidianVault/Reading/book-name",
     exportToObsidian: "导出到 Obsidian",
     noWorkspaceLoaded: "尚未载入工作区",
@@ -191,6 +195,7 @@ const translations = {
     failedLoadWorkspace: "载入工作区失败",
     failedLoadChapter: "载入章节失败",
     failedSelectWorkspace: "选择工作区文件夹失败",
+    failedSelectObsidianFolder: "选择 Obsidian 文件夹失败",
     failedUpdateState: "更新状态失败",
     failedSaveNote: "保存笔记失败",
     failedSaveReviewCard: "保存复习卡失败",
@@ -312,6 +317,22 @@ function App() {
       await loadWorkspace(selectedWorkspace);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedSelectWorkspace);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function selectObsidianFolder() {
+    if (!window.deepReadingDesktop) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const selectedFolder = await window.deepReadingDesktop.selectObsidianFolder();
+      if (!selectedFolder) return;
+      setObsidianFolder(selectedFolder);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedSelectObsidianFolder);
     } finally {
       setBusy(false);
     }
@@ -526,6 +547,11 @@ function App() {
             placeholder={t.obsidianFolderPlaceholder}
             spellCheck={false}
           />
+          {window.deepReadingDesktop && (
+            <button type="button" onClick={() => void selectObsidianFolder()} disabled={busy}>
+              {t.selectObsidianFolder}
+            </button>
+          )}
           <button type="submit" disabled={busy || !obsidianFolder.trim()}>
             {t.exportToObsidian}
           </button>

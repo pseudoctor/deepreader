@@ -3,6 +3,7 @@ import path from "node:path";
 
 const isDev = Boolean(process.env.DEEP_READING_DESKTOP_DEV_SERVER);
 const workspaceSelectChannel = "workspace:select-folder";
+const obsidianSelectChannel = "obsidian:select-folder";
 
 function webDistIndex(): string {
   return path.resolve(__dirname, "../../web/dist/index.html");
@@ -41,6 +42,19 @@ app.whenReady().then(() => {
     const result = await dialog.showOpenDialog({
       properties: ["openDirectory"],
       title: "Select Reading Workspace",
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle(obsidianSelectChannel, async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ["openDirectory", "createDirectory"],
+      title: "Select Obsidian Export Folder",
     });
 
     if (result.canceled || result.filePaths.length === 0) {
