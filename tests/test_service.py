@@ -63,7 +63,24 @@ def test_get_status_returns_progress_and_artifacts(tmp_path: Path) -> None:
     assert status["sources"] == 1
     assert status["current"] == "ch01"
     assert status["progress"] == {"not-started": 2}
+    assert status["continue_reading"]["current_chapter"]["id"] == "ch01"
+    assert status["continue_reading"]["next_action"]["kind"] == "start_next"
+    assert status["continue_reading"]["next_action"]["chapter_id"] == "ch01"
     assert status["artifacts"]["evidence_cards.md"] is True
+
+
+def test_get_status_prefers_done_chapters_for_review(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    update_reading_state(workspace, "ch01", "done")
+
+    status = get_status(workspace)
+
+    assert status["continue_reading"]["review_due"][0]["id"] == "ch01"
+    assert status["continue_reading"]["next_action"] == {
+        "kind": "review_completed",
+        "chapter_id": "ch01",
+        "title": "Intro",
+    }
 
 
 def test_read_chapter_returns_structured_text(tmp_path: Path) -> None:

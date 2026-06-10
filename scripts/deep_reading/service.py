@@ -39,6 +39,14 @@ EVIDENCE_MARKERS = (
 VAGUE_MARKERS = ("things", "stuff", "important", "interesting", "很多", "一些", "重要", "有趣")
 
 
+def chapter_summary(chapter: dict[str, object], state_value: str) -> dict[str, object]:
+    return {
+        "id": chapter["id"],
+        "title": chapter["title"],
+        "state": state_value,
+    }
+
+
 def list_chapters(workspace: Path) -> list[dict[str, object]]:
     metadata = load_metadata(workspace)
     state = load_state(workspace)
@@ -79,7 +87,68 @@ def get_status(workspace: Path) -> dict[str, object]:
         "estimated_tokens": metadata.get("estimated_tokens", 0),
         "current": state.get("current"),
         "progress": counts,
+        "continue_reading": build_continue_reading(metadata, state),
         "artifacts": {artifact: (workspace / artifact).exists() for artifact in artifacts},
+    }
+
+
+def build_continue_reading(
+    metadata: dict[str, object],
+    state: dict[str, object],
+) -> dict[str, object]:
+    chapters = metadata.get("chapters", [])
+    chapter_states = state.get("chapters", {})
+    current_id = state.get("current")
+    current_chapter = None
+    review_due = []
+    first_reading = None
+    first_not_started = None
+
+    for chapter in chapters:
+        chapter_id = str(chapter["id"])
+        state_value = str(chapter_states.get(chapter_id, "not-started"))
+        summary = chapter_summary(chapter, state_value)
+        if chapter_id == current_id:
+            current_chapter = summary
+        if state_value == "done":
+            review_due.append(summary)
+        if state_value == "reading" and first_reading is None:
+            first_reading = summary
+        if state_value == "not-started" and first_not_started is None:
+            first_not_started = summary
+
+    next_action: dict[str, object]
+    if current_chapter and current_chapter["state"] == "reading":
+        next_action = {
+            "kind": "continue_current",
+            "chapter_id": current_chapter["id"],
+            "title": current_chapter["title"],
+        }
+    elif review_due:
+        next_action = {
+            "kind": "review_completed",
+            "chapter_id": review_due[0]["id"],
+            "title": review_due[0]["title"],
+        }
+    elif first_reading:
+        next_action = {
+            "kind": "continue_current",
+            "chapter_id": first_reading["id"],
+            "title": first_reading["title"],
+        }
+    elif first_not_started:
+        next_action = {
+            "kind": "start_next",
+            "chapter_id": first_not_started["id"],
+            "title": first_not_started["title"],
+        }
+    else:
+        next_action = {"kind": "synthesize_book", "chapter_id": None, "title": None}
+
+    return {
+        "current_chapter": current_chapter,
+        "review_due": review_due,
+        "next_action": next_action,
     }
 
 

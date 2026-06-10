@@ -39,6 +39,8 @@ def test_status_endpoint_returns_workspace_status(tmp_path: Path) -> None:
     assert data["workspace"] == str(workspace)
     assert data["current"] == "ch01"
     assert data["progress"] == {"not-started": 2}
+    assert data["continue_reading"]["current_chapter"]["id"] == "ch01"
+    assert data["continue_reading"]["next_action"]["kind"] == "start_next"
 
 
 def test_chapters_endpoint_returns_chapter_list(tmp_path: Path) -> None:

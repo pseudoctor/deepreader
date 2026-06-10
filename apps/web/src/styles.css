@@ -92,7 +92,8 @@ button:disabled {
 .workspace-form,
 .export-form,
 .recent-workspaces,
-.status-block {
+.status-block,
+.continue-reading {
   border-bottom: 1px solid #cfd8d0;
   display: grid;
   gap: 8px;
@@ -168,6 +169,52 @@ textarea {
 .status-block strong {
   font-size: 0.86rem;
   line-height: 1.45;
+}
+
+.continue-reading p {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+}
+
+.continue-reading p strong,
+.continue-reading button span {
+  color: #53625d;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.continue-reading p span {
+  color: #1d2525;
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.continue-reading button {
+  background: #fffefa;
+  border-color: #b9c5be;
+  display: grid;
+  gap: 4px;
+  min-height: 72px;
+  padding: 10px;
+  text-align: left;
+}
+
+.continue-reading button:hover:not(:disabled) {
+  border-color: #82988c;
+}
+
+.continue-reading button strong {
+  color: #214d45;
+  font-size: 0.9rem;
+  line-height: 1.3;
+}
+
+.continue-reading button em {
+  color: #68756f;
+  font-size: 0.78rem;
+  font-style: normal;
+  line-height: 1.35;
 }
 
 .chapter-list {

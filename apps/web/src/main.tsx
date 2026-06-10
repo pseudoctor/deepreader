@@ -16,7 +16,26 @@ type Status = {
   estimated_tokens: number;
   current: string | null;
   progress: Record<string, number>;
+  continue_reading: ContinueReading;
   artifacts: Record<string, boolean>;
+};
+
+type ChapterSummary = {
+  id: string;
+  title: string;
+  state: string;
+};
+
+type NextAction = {
+  kind: "continue_current" | "review_completed" | "start_next" | "synthesize_book";
+  chapter_id: string | null;
+  title: string | null;
+};
+
+type ContinueReading = {
+  current_chapter: ChapterSummary | null;
+  review_due: ChapterSummary[];
+  next_action: NextAction;
 };
 
 type ChapterText = {
@@ -105,6 +124,14 @@ const translations = {
     obsidianFolderPlaceholder: "/Users/me/ObsidianVault/Reading/book-name",
     exportToObsidian: "Export to Obsidian",
     noWorkspaceLoaded: "No workspace loaded",
+    continueReading: "Continue reading",
+    currentChapter: "Last position",
+    reviewDue: "{count} chapter(s) read but not reviewed",
+    nextStep: "Next step",
+    action_continue_current: "Continue current chapter",
+    action_review_completed: "Review completed chapter",
+    action_start_next: "Start next chapter",
+    action_synthesize_book: "Build book synthesis",
     chapters: "Chapters",
     chapter: "Chapter",
     beforeReading: "Before reading",
@@ -214,6 +241,14 @@ const translations = {
     obsidianFolderPlaceholder: "/Users/me/ObsidianVault/Reading/book-name",
     exportToObsidian: "导出到 Obsidian",
     noWorkspaceLoaded: "尚未载入工作区",
+    continueReading: "继续阅读",
+    currentChapter: "上次位置",
+    reviewDue: "{count} 章已读完但未复习",
+    nextStep: "当前建议",
+    action_continue_current: "继续当前章节",
+    action_review_completed: "复习已读章节",
+    action_start_next: "开始下一章",
+    action_synthesize_book: "整理全书综合",
     chapters: "章节",
     chapter: "章节",
     beforeReading: "读前问题",
@@ -364,6 +399,12 @@ function formatFeynmanFeedback(result: FeynmanCheckResult): string {
     "### Rewrite",
     result.rewritten_version,
   ].join("\n");
+}
+
+function formatActionLabel(t: (typeof translations)[Language], action: NextAction): string {
+  const key = `action_${action.kind}` as keyof typeof t;
+  const label = t[key];
+  return typeof label === "string" ? label : action.kind;
 }
 
 function App() {
@@ -822,6 +863,41 @@ function App() {
           <span>{t.status}</span>
           <strong>{progressText}</strong>
         </div>
+
+        {status && (
+          <section className="continue-reading">
+            <span className="eyebrow">{t.continueReading}</span>
+            {status.continue_reading.current_chapter && (
+              <p>
+                <strong>{t.currentChapter}</strong>
+                <span>
+                  {status.continue_reading.current_chapter.id}:{" "}
+                  {status.continue_reading.current_chapter.title}
+                </span>
+              </p>
+            )}
+            <p>
+              <strong>{t.reviewDue.replace("{count}", String(status.continue_reading.review_due.length))}</strong>
+            </p>
+            <button
+              type="button"
+              disabled={busy || !status.continue_reading.next_action.chapter_id}
+              onClick={() => {
+                const chapterId = status.continue_reading.next_action.chapter_id;
+                if (chapterId) void loadChapter(chapterId);
+              }}
+            >
+              <span>{t.nextStep}</span>
+              <strong>{formatActionLabel(t, status.continue_reading.next_action)}</strong>
+              {status.continue_reading.next_action.chapter_id && (
+                <em>
+                  {status.continue_reading.next_action.chapter_id}:{" "}
+                  {status.continue_reading.next_action.title}
+                </em>
+              )}
+            </button>
+          </section>
+        )}
 
         <form className="export-form" onSubmit={exportToObsidian}>
           <span className="eyebrow">{t.export}</span>
