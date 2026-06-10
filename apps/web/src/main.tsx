@@ -34,6 +34,7 @@ type ObsidianExportResult = {
 };
 
 type DeepReadingDesktopApi = {
+  apiBaseUrl: string;
   platform: string;
   selectWorkspaceFolder: () => Promise<string | null>;
   selectObsidianFolder: () => Promise<string | null>;
@@ -248,7 +249,8 @@ function getInitialRecentWorkspaces(): string[] {
 }
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, {
+  const apiBaseUrl = window.deepReadingDesktop?.apiBaseUrl ?? "/api";
+  const response = await fetch(`${apiBaseUrl}${path}`, {
     headers: { "Content-Type": "application/json", ...init?.headers },
     ...init,
   });
