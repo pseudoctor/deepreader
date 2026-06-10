@@ -3,7 +3,7 @@ VENV := .venv
 VENV_PYTHON := $(VENV)/bin/python
 VENV_PIP := $(VENV)/bin/pip
 
-.PHONY: install-dev api-dev web-install web-dev web-build lint format test check clean
+.PHONY: install-dev api-dev web-install web-dev web-build desktop-install desktop-build desktop-dev lint format test check clean
 
 install-dev:
 	$(PYTHON) -m venv $(VENV)
@@ -20,6 +20,15 @@ web-dev:
 
 web-build:
 	npm run build --prefix apps/web
+
+desktop-install:
+	npm install --prefix apps/desktop
+
+desktop-build:
+	npm run build --prefix apps/desktop
+
+desktop-dev:
+	npm run dev --prefix apps/desktop
 
 lint:
 	$(VENV_PYTHON) -m ruff check .

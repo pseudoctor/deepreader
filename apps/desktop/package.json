@@ -1,0 +1,16 @@
+{
+  "name": "deep-reading-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "npm run build && node scripts/launch-dev.mjs",
+    "start": "npm run build && electron dist/main.js"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "electron": "^39.0.0",
+    "typescript": "^5.9.0"
+  }
+}

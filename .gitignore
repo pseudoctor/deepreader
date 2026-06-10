@@ -7,6 +7,8 @@ __pycache__/
 workspaces/
 node_modules/
 apps/web/dist/
+apps/desktop/dist/
+apps/desktop/node_modules/
 *.tsbuildinfo
 apps/web/vite.config.js
 apps/web/vite.config.d.ts
