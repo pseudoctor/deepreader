@@ -81,3 +81,100 @@ def test_chapter_text_endpoint_returns_structured_error(tmp_path: Path) -> None:
 
     assert response.status_code == 400
     assert response.json() == {"error": "Unknown chapter: ch99"}
+
+
+def test_state_endpoint_updates_reading_state(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/state",
+        json={"workspace": str(workspace), "chapter_id": "ch02", "state": "reading"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"chapter_id": "ch02", "state": "reading", "current": "ch02"}
+    chapters = client.get("/chapters", params={"workspace": str(workspace)}).json()["chapters"]
+    assert chapters[1]["state"] == "reading"
+
+
+def test_state_endpoint_returns_error_for_invalid_state(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/state",
+        json={"workspace": str(workspace), "chapter_id": "ch01", "state": "invalid"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"].startswith("Invalid state")
+
+
+def test_notes_endpoint_appends_chapter_note(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/notes",
+        json={
+            "workspace": str(workspace),
+            "chapter_id": "ch01",
+            "section": "Confusions",
+            "text": "I need to clarify the causal chain.",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["kind"] == "chapter_note"
+    assert data["chapter_id"] == "ch01"
+    assert "I need to clarify the causal chain." in Path(data["path"]).read_text(
+        encoding="utf-8"
+    )
+
+
+def test_review_cards_endpoint_appends_card(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/review-cards",
+        json={
+            "workspace": str(workspace),
+            "question": "What is the chapter trying to answer?",
+            "answer": "It frames the comparison problem.",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["kind"] == "review_card"
+    content = Path(data["path"]).read_text(encoding="utf-8")
+    assert "What is the chapter trying to answer?" in content
+    assert "It frames the comparison problem." in content
+
+
+def test_evidence_cards_endpoint_appends_card(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/evidence-cards",
+        json={
+            "workspace": str(workspace),
+            "claim": "The chapter starts with a comparison problem.",
+            "locator": "ch01",
+            "support": "The opening asks why some societies gained advantages.",
+            "confidence": "High",
+            "not_explicit": "Exact causal path is not complete yet.",
+            "inference": "This frames the book's research question.",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["kind"] == "evidence_card"
+    content = Path(data["path"]).read_text(encoding="utf-8")
+    assert "The chapter starts with a comparison problem." in content
+    assert "**Confidence** High" in content
