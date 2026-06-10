@@ -73,6 +73,8 @@ const translations = {
     workspace: "Workspace",
     selectWorkspace: "Choose folder",
     load: "Load",
+    recentWorkspaces: "Recent workspaces",
+    noRecentWorkspaces: "No recent workspaces yet",
     status: "Status",
     export: "Export",
     obsidianFolder: "Obsidian folder",
@@ -150,6 +152,8 @@ const translations = {
     workspace: "工作区",
     selectWorkspace: "选择文件夹",
     load: "载入",
+    recentWorkspaces: "最近工作区",
+    noRecentWorkspaces: "暂无最近工作区",
     status: "状态",
     export: "导出",
     obsidianFolder: "Obsidian 文件夹",
@@ -231,6 +235,18 @@ function getInitialObsidianFolder(): string {
   return window.localStorage.getItem("deep-reading-obsidian-folder") ?? "";
 }
 
+function getInitialRecentWorkspaces(): string[] {
+  try {
+    const stored = window.localStorage.getItem("deep-reading-recent-workspaces");
+    const parsed = stored ? JSON.parse(stored) : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string").slice(0, 5)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
     headers: { "Content-Type": "application/json", ...init?.headers },
@@ -262,6 +278,7 @@ function App() {
   const [evidenceNotExplicit, setEvidenceNotExplicit] = useState("");
   const [evidenceInference, setEvidenceInference] = useState("");
   const [obsidianFolder, setObsidianFolder] = useState(getInitialObsidianFolder);
+  const [recentWorkspaces, setRecentWorkspaces] = useState<string[]>(getInitialRecentWorkspaces);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -274,6 +291,13 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem("deep-reading-obsidian-folder", obsidianFolder);
   }, [obsidianFolder]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      "deep-reading-recent-workspaces",
+      JSON.stringify(recentWorkspaces),
+    );
+  }, [recentWorkspaces]);
 
   const progressText = useMemo(() => {
     if (!status) return t.noWorkspaceLoaded;
@@ -297,6 +321,10 @@ function App() {
       if (chapterResult.chapters.length > 0) {
         await loadChapter(chapterResult.chapters[0].id, nextWorkspace);
       }
+      setRecentWorkspaces((current) => [
+        nextWorkspace,
+        ...current.filter((item) => item !== nextWorkspace),
+      ].slice(0, 5));
       setMessage(t.workspaceLoaded);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedLoadWorkspace);
@@ -531,6 +559,30 @@ function App() {
             {t.load}
           </button>
         </form>
+
+        <div className="recent-workspaces">
+          <span className="eyebrow">{t.recentWorkspaces}</span>
+          {recentWorkspaces.length === 0 ? (
+            <p className="muted">{t.noRecentWorkspaces}</p>
+          ) : (
+            <div className="recent-workspace-list">
+              {recentWorkspaces.map((recentWorkspace) => (
+                <button
+                  key={recentWorkspace}
+                  onClick={() => {
+                    setWorkspace(recentWorkspace);
+                    void loadWorkspace(recentWorkspace);
+                  }}
+                  type="button"
+                  disabled={busy}
+                  title={recentWorkspace}
+                >
+                  {recentWorkspace}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="status-block">
           <span>{t.status}</span>

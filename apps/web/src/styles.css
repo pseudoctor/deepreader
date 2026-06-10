@@ -91,11 +91,37 @@ button:disabled {
 
 .workspace-form,
 .export-form,
+.recent-workspaces,
 .status-block {
   border-bottom: 1px solid #cfd8d0;
   display: grid;
   gap: 8px;
   padding: 16px;
+}
+
+.recent-workspaces p {
+  margin: 0;
+}
+
+.recent-workspace-list {
+  display: grid;
+  gap: 6px;
+}
+
+.recent-workspace-list button {
+  background: #f8f7f2;
+  color: #1d2525;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  overflow: hidden;
+  padding: 7px 9px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-workspace-list button:hover {
+  border-color: #82988c;
 }
 
 .language-switcher {
