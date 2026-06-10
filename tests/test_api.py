@@ -129,9 +129,33 @@ def test_notes_endpoint_appends_chapter_note(tmp_path: Path) -> None:
     data = response.json()
     assert data["kind"] == "chapter_note"
     assert data["chapter_id"] == "ch01"
-    assert "I need to clarify the causal chain." in Path(data["path"]).read_text(
-        encoding="utf-8"
+    assert data["note_type"] == "My Thought"
+    content = Path(data["path"]).read_text(encoding="utf-8")
+    assert "### My Thought" in content
+    assert "I need to clarify the causal chain." in content
+
+
+def test_notes_endpoint_appends_typed_quote(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/notes",
+        json={
+            "workspace": str(workspace),
+            "chapter_id": "ch01",
+            "section": "Key Concepts",
+            "text": "This selected sentence matters.",
+            "note_type": "Quote",
+        },
     )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["note_type"] == "Quote"
+    content = Path(data["path"]).read_text(encoding="utf-8")
+    assert "### Quote" in content
+    assert "> This selected sentence matters." in content
 
 
 def test_quotes_endpoint_appends_quote_to_chapter_note(tmp_path: Path) -> None:

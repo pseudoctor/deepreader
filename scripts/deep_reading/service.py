@@ -13,6 +13,7 @@ from .state import load_state
 from .workspace import write
 
 ALLOWED_STATES = {"not-started", "reading", "done", "review"}
+ALLOWED_NOTE_TYPES = {"Quote", "My Thought", "AI Explanation", "Question"}
 
 
 def list_chapters(workspace: Path) -> list[dict[str, object]]:
@@ -85,13 +86,31 @@ def update_reading_state(workspace: Path, chapter_id: str, state_value: str) -> 
     return {"chapter_id": chapter_id, "state": state_value, "current": chapter_id}
 
 
-def add_note(workspace: Path, chapter_id: str, section: str, text: str) -> dict[str, str]:
+def format_typed_note(note_type: str, text: str) -> str:
+    if note_type == "Quote":
+        return "> " + text.strip().replace("\n", "\n> ")
+    return text.strip()
+
+
+def add_note(
+    workspace: Path,
+    chapter_id: str,
+    section: str,
+    text: str,
+    note_type: str = "My Thought",
+) -> dict[str, str]:
+    if note_type not in ALLOWED_NOTE_TYPES:
+        raise ExtractionError(
+            f"Invalid note type '{note_type}'. Use one of: {', '.join(sorted(ALLOWED_NOTE_TYPES))}"
+        )
+
     path = chapter_note_path(workspace, chapter_id)
-    append_to_section(path, section, text)
+    append_to_section(path, section, format_typed_note(note_type, text), note_type)
     return {
         "kind": "chapter_note",
         "chapter_id": chapter_id,
         "section": section,
+        "note_type": note_type,
         "path": str(path),
     }
 

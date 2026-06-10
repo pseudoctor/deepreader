@@ -67,6 +67,8 @@ const noteSectionOptions = [
   "Applications",
 ] as const;
 
+const noteTypeOptions = ["Quote", "My Thought", "AI Explanation", "Question"] as const;
+
 const confidenceOptions = ["High", "Medium", "Low"] as const;
 
 const stateOptions = ["reading", "done", "review"] as const;
@@ -101,6 +103,7 @@ const translations = {
     selectedText: "Selected text",
     saveQuote: "Save quote",
     makeEvidenceCard: "Make evidence card",
+    noteType: "Note type",
     section: "Section",
     notePlaceholder: "Write a question, summary, or application...",
     saveNote: "Save note",
@@ -150,6 +153,12 @@ const translations = {
       "My 3-5 Sentence Summary": "My 3-5 Sentence Summary",
       Applications: "Applications",
     },
+    noteTypeLabels: {
+      Quote: "Quote",
+      "My Thought": "My Thought",
+      "AI Explanation": "AI Explanation",
+      Question: "Question",
+    },
     confidenceLabels: {
       High: "High",
       Medium: "Medium",
@@ -185,6 +194,7 @@ const translations = {
     selectedText: "已选文本",
     saveQuote: "保存摘录",
     makeEvidenceCard: "转为证据卡",
+    noteType: "笔记类型",
     section: "分类",
     notePlaceholder: "写下问题、总结或可应用之处...",
     saveNote: "保存笔记",
@@ -233,6 +243,12 @@ const translations = {
       "Key Concepts": "关键概念",
       "My 3-5 Sentence Summary": "我的 3-5 句总结",
       Applications: "可应用之处",
+    },
+    noteTypeLabels: {
+      Quote: "原文摘录",
+      "My Thought": "我的想法",
+      "AI Explanation": "AI 解释",
+      Question: "问题",
     },
     confidenceLabels: {
       High: "高",
@@ -285,6 +301,7 @@ function App() {
   const [activeChapter, setActiveChapter] = useState<ChapterText | null>(null);
   const [activeCapture, setActiveCapture] = useState<"note" | "review" | "evidence">("note");
   const [noteSection, setNoteSection] = useState("Confusions");
+  const [noteType, setNoteType] = useState("My Thought");
   const [noteText, setNoteText] = useState("");
   const [reviewQuestion, setReviewQuestion] = useState("");
   const [reviewAnswer, setReviewAnswer] = useState("");
@@ -507,6 +524,7 @@ function App() {
           workspace,
           chapter_id: activeChapter.id,
           section: noteSection,
+          note_type: noteType,
           text: noteText.trim(),
         }),
       });
@@ -784,6 +802,19 @@ function App() {
 
         {activeCapture === "note" && (
           <form onSubmit={saveNote} className="capture-form">
+            <label htmlFor="note-type">{t.noteType}</label>
+            <select
+              id="note-type"
+              value={noteType}
+              onChange={(event) => setNoteType(event.target.value)}
+            >
+              {noteTypeOptions.map((type) => (
+                <option key={type} value={type}>
+                  {t.noteTypeLabels[type]}
+                </option>
+              ))}
+            </select>
+
             <label htmlFor="section">{t.section}</label>
             <select
               id="section"

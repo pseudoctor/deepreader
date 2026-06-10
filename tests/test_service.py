@@ -99,8 +99,28 @@ def test_add_note_returns_written_path(tmp_path: Path) -> None:
 
     assert result["kind"] == "chapter_note"
     assert result["chapter_id"] == "ch01"
+    assert result["note_type"] == "My Thought"
     assert Path(result["path"]).exists()
-    assert "What is the main distinction?" in Path(result["path"]).read_text(encoding="utf-8")
+    content = Path(result["path"]).read_text(encoding="utf-8")
+    assert "### My Thought" in content
+    assert "What is the main distinction?" in content
+
+
+def test_add_note_supports_quote_type(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    result = add_note(
+        workspace,
+        "ch01",
+        "Key Concepts",
+        "This selected sentence matters.",
+        "Quote",
+    )
+
+    assert result["note_type"] == "Quote"
+    content = Path(result["path"]).read_text(encoding="utf-8")
+    assert "### Quote" in content
+    assert "> This selected sentence matters." in content
 
 
 def test_add_quote_appends_selected_text_to_chapter_note(tmp_path: Path) -> None:

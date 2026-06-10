@@ -47,6 +47,10 @@ class NoteRequest(BaseModel):
     chapter_id: str
     section: str
     text: str
+    note_type: str = Field(
+        default="My Thought",
+        pattern="^(Quote|My Thought|AI Explanation|Question)$",
+    )
 
 
 class QuoteRequest(BaseModel):
@@ -112,7 +116,13 @@ def state(request: StateRequest) -> dict[str, str]:
 
 @app.post("/notes")
 def notes(request: NoteRequest) -> dict[str, str]:
-    return add_note(request.workspace, request.chapter_id, request.section, request.text)
+    return add_note(
+        request.workspace,
+        request.chapter_id,
+        request.section,
+        request.text,
+        request.note_type,
+    )
 
 
 @app.post("/quotes")

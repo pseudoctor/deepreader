@@ -27,7 +27,7 @@ def chapter_note_path(workspace: Path, chapter_id: str) -> Path:
     return notes[0]
 
 
-def append_to_section(path: Path, section: str, content: str) -> None:
+def append_to_section(path: Path, section: str, content: str, note_type: str = "Note") -> None:
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
     heading = f"## {section}".casefold()
@@ -46,7 +46,7 @@ def append_to_section(path: Path, section: str, content: str) -> None:
     if insert_at is None:
         raise ExtractionError(f"Section not found in {path.name}: {section}")
 
-    block = ["", f"### Note {date.today().isoformat()}", "", content.rstrip(), ""]
+    block = ["", f"### {note_type} {date.today().isoformat()}", "", content.rstrip(), ""]
     updated = lines[:insert_at] + block + lines[insert_at:]
     path.write_text("\n".join(updated).rstrip() + "\n", encoding="utf-8")
 
