@@ -3,7 +3,7 @@ VENV := .venv
 VENV_PYTHON := $(VENV)/bin/python
 VENV_PIP := $(VENV)/bin/pip
 
-.PHONY: install-dev api-dev lint format test check clean
+.PHONY: install-dev api-dev web-install web-dev web-build lint format test check clean
 
 install-dev:
 	$(PYTHON) -m venv $(VENV)
@@ -11,6 +11,15 @@ install-dev:
 
 api-dev:
 	$(VENV_PYTHON) -m uvicorn deep_reading.api:app --reload
+
+web-install:
+	npm install --prefix apps/web
+
+web-dev:
+	npm run dev --prefix apps/web
+
+web-build:
+	npm run build --prefix apps/web
 
 lint:
 	$(VENV_PYTHON) -m ruff check .
@@ -27,4 +36,4 @@ check:
 	$(VENV_PYTHON) -m pytest
 
 clean:
-	rm -rf .pytest_cache .venv scripts/__pycache__ scripts/deep_reading/__pycache__ tests/__pycache__ scripts/deep_reading.egg-info
+	rm -rf .pytest_cache .venv scripts/__pycache__ scripts/deep_reading/__pycache__ tests/__pycache__ scripts/deep_reading.egg-info apps/web/dist
