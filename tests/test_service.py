@@ -10,7 +10,9 @@ from deep_reading.service import (
     add_quote,
     add_review_card,
     check_feynman_summary,
+    explain_selection,
     export_obsidian,
+    generate_selection_review_question,
     get_status,
     list_chapters,
     read_chapter,
@@ -120,6 +122,50 @@ def test_check_feynman_summary_rejects_empty_summary(tmp_path: Path) -> None:
 
     with pytest.raises(ExtractionError, match="Summary cannot be empty"):
         check_feynman_summary(workspace, "ch01", " ")
+
+
+def test_explain_selection_returns_note_ready_text(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    result = explain_selection(workspace, "ch01", "This is a short sample.")
+
+    assert result["chapter_id"] == "ch01"
+    assert result["title"] == "Intro"
+    assert "What it says:" in result["explanation"]
+    assert "This is a short sample." in result["explanation"]
+
+
+def test_generate_selection_review_question_returns_card_draft(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    result = generate_selection_review_question(
+        workspace,
+        "ch01",
+        "This is a short sample.",
+    )
+
+    assert result["chapter_id"] == "ch01"
+    assert "What claim or causal link" in result["question"]
+    assert "This is a short sample." in result["answer"]
+
+
+def test_selection_actions_use_chinese_templates_for_chinese_text(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    explanation = explain_selection(workspace, "ch01", "這段文字支持一個因果推論。")
+    review = generate_selection_review_question(workspace, "ch01", "這段文字支持一個因果推論。")
+
+    assert "怎么读这段" in explanation["explanation"]
+    assert "支持了什么主张或因果链" in review["question"]
+
+
+def test_selection_actions_reject_empty_text(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    with pytest.raises(ExtractionError, match="Selected text cannot be empty"):
+        explain_selection(workspace, "ch01", " ")
+    with pytest.raises(ExtractionError, match="Selected text cannot be empty"):
+        generate_selection_review_question(workspace, "ch01", " ")
 
 
 def test_update_reading_state_writes_state_file(tmp_path: Path) -> None:

@@ -343,7 +343,9 @@ textarea {
   border: 1px solid #31413e;
   box-shadow: 0 10px 28px rgb(29 37 37 / 20%);
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
+  max-width: min(520px, calc(100vw - 24px));
   padding: 6px;
   position: fixed;
   transform: translateX(-50%);
@@ -358,7 +360,7 @@ textarea {
   font-weight: 700;
   min-height: 30px;
   padding: 0 10px;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .notes-pane header {

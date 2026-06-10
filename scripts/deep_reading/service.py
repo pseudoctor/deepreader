@@ -194,6 +194,10 @@ def contains_marker(text: str, marker: str) -> bool:
     return marker in text
 
 
+def contains_cjk(text: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in text)
+
+
 def check_feynman_summary(workspace: Path, chapter_id: str, summary: str) -> dict[str, object]:
     chapter = get_chapter(workspace, chapter_id)
     stripped = summary.strip()
@@ -237,6 +241,85 @@ def check_feynman_summary(workspace: Path, chapter_id: str, summary: str) -> dic
         "missing_causal_links": missing_causal_links,
         "unsupported_leaps": unsupported_leaps,
         "rewritten_version": rewritten_version,
+    }
+
+
+def explain_selection(workspace: Path, chapter_id: str, selected_text: str) -> dict[str, str]:
+    chapter = get_chapter(workspace, chapter_id)
+    text = selected_text.strip()
+    if not text:
+        raise ExtractionError("Selected text cannot be empty")
+
+    if contains_cjk(text):
+        explanation = "\n".join(
+            [
+                f"选中文段来自 {chapter['id']}: {chapter['title']}",
+                "",
+                "它在说什么：",
+                text,
+                "",
+                "怎么读这段：",
+                (
+                    "先判断这段支持了什么主张，再找它给出的证据，以及暗含的因果链。"
+                    "如果它在做比较，就追问：被比较对象之间变了什么，什么又保持不变。"
+                ),
+            ]
+        )
+    else:
+        explanation = "\n".join(
+            [
+                f"Selected passage from {chapter['id']}: {chapter['title']}",
+                "",
+                "What it says:",
+                text,
+                "",
+                "How to read it:",
+                (
+                    "Identify the claim this passage supports, the evidence it names, and any "
+                    "causal link it implies. If the passage uses a comparison, ask what changed "
+                    "between the compared cases and what stays constant."
+                ),
+            ]
+        )
+
+    return {
+        "chapter_id": chapter["id"],
+        "title": chapter["title"],
+        "explanation": explanation,
+    }
+
+
+def generate_selection_review_question(
+    workspace: Path,
+    chapter_id: str,
+    selected_text: str,
+) -> dict[str, str]:
+    chapter = get_chapter(workspace, chapter_id)
+    text = selected_text.strip()
+    if not text:
+        raise ExtractionError("Selected text cannot be empty")
+
+    preview = text if len(text) <= 180 else text[:177].rstrip() + "..."
+    if contains_cjk(text):
+        return {
+            "chapter_id": chapter["id"],
+            "title": chapter["title"],
+            "question": f"这段文字在 {chapter['id']} 中支持了什么主张或因果链？",
+            "answer": (
+                f"可用这段作为证据：{preview}\n\n"
+                "一个好的回答需要说清楚主张、解释因果链，并指出这段本身还不能证明什么。"
+            ),
+        }
+
+    return {
+        "chapter_id": chapter["id"],
+        "title": chapter["title"],
+        "question": f"What claim or causal link does this passage support in {chapter['id']}?",
+        "answer": (
+            f"Use this passage as evidence: {preview}\n\n"
+            "A strong answer should name the claim, explain the causal link, and state what "
+            "the passage does not prove by itself."
+        ),
     }
 
 

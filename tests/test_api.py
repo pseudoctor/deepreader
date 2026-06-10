@@ -208,6 +208,45 @@ def test_feynman_check_endpoint_returns_structured_feedback(tmp_path: Path) -> N
     assert "causal mechanism" in data["rewritten_version"]
 
 
+def test_selection_explanation_endpoint_returns_note_draft(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/selection-explanation",
+        json={
+            "workspace": str(workspace),
+            "chapter_id": "ch01",
+            "selected_text": "This is a short sample.",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["chapter_id"] == "ch01"
+    assert "How to read it:" in data["explanation"]
+
+
+def test_selection_review_question_endpoint_returns_card_draft(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/selection-review-question",
+        json={
+            "workspace": str(workspace),
+            "chapter_id": "ch01",
+            "selected_text": "This is a short sample.",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["chapter_id"] == "ch01"
+    assert "What claim or causal link" in data["question"]
+    assert "This is a short sample." in data["answer"]
+
+
 def test_review_cards_endpoint_appends_card(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     client = TestClient(app)

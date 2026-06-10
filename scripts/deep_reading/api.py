@@ -17,7 +17,9 @@ from .service import (
     add_quote,
     add_review_card,
     check_feynman_summary,
+    explain_selection,
     export_obsidian,
+    generate_selection_review_question,
     get_status,
     list_chapters,
     read_chapter,
@@ -65,6 +67,12 @@ class FeynmanCheckRequest(BaseModel):
     workspace: Path
     chapter_id: str
     summary: str
+
+
+class SelectionActionRequest(BaseModel):
+    workspace: Path
+    chapter_id: str
+    selected_text: str
 
 
 class ReviewCardRequest(BaseModel):
@@ -140,6 +148,20 @@ def quotes(request: QuoteRequest) -> dict[str, str]:
 @app.post("/feynman-check")
 def feynman_check(request: FeynmanCheckRequest) -> dict[str, object]:
     return check_feynman_summary(request.workspace, request.chapter_id, request.summary)
+
+
+@app.post("/selection-explanation")
+def selection_explanation(request: SelectionActionRequest) -> dict[str, str]:
+    return explain_selection(request.workspace, request.chapter_id, request.selected_text)
+
+
+@app.post("/selection-review-question")
+def selection_review_question(request: SelectionActionRequest) -> dict[str, str]:
+    return generate_selection_review_question(
+        request.workspace,
+        request.chapter_id,
+        request.selected_text,
+    )
 
 
 @app.post("/review-cards")

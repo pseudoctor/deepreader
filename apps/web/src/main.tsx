@@ -67,6 +67,19 @@ type FeynmanCheckResult = {
   rewritten_version: string;
 };
 
+type SelectionExplanationResult = {
+  chapter_id: string;
+  title: string;
+  explanation: string;
+};
+
+type SelectionReviewQuestionResult = {
+  chapter_id: string;
+  title: string;
+  question: string;
+  answer: string;
+};
+
 type SelectionToolbarPosition = {
   left: number;
   top: number;
@@ -160,6 +173,8 @@ const translations = {
     selectedText: "Selected text",
     saveQuote: "Save quote",
     makeEvidenceCard: "Make evidence card",
+    explainSelection: "Explain",
+    makeReviewQuestion: "Review Q",
     noteType: "Note type",
     section: "Section",
     notePlaceholder: "Write a question, summary, or application...",
@@ -186,6 +201,8 @@ const translations = {
     reviewCardSaved: "Review card saved",
     evidenceCardSaved: "Evidence card saved",
     feynmanFeedbackSaved: "Feynman feedback saved",
+    explanationDrafted: "Explanation drafted",
+    reviewQuestionDrafted: "Review question drafted",
     quoteSaved: "Quote saved",
     obsidianExported: "Exported {count} Markdown files to {folder}",
     failedLoadWorkspace: "Failed to load workspace",
@@ -198,6 +215,8 @@ const translations = {
     failedSaveEvidenceCard: "Failed to save evidence card",
     failedCheckSummary: "Failed to check summary",
     failedSaveFeynmanFeedback: "Failed to save Feynman feedback",
+    failedExplainSelection: "Failed to explain selection",
+    failedMakeReviewQuestion: "Failed to make review question",
     failedSaveQuote: "Failed to save quote",
     failedObsidianExport: "Failed to export to Obsidian",
     requestFailed: "Request failed",
@@ -277,6 +296,8 @@ const translations = {
     selectedText: "已选文本",
     saveQuote: "保存摘录",
     makeEvidenceCard: "转为证据卡",
+    explainSelection: "解释这段",
+    makeReviewQuestion: "生成复习题",
     noteType: "笔记类型",
     section: "分类",
     notePlaceholder: "写下问题、总结或可应用之处...",
@@ -303,6 +324,8 @@ const translations = {
     reviewCardSaved: "复习卡已保存",
     evidenceCardSaved: "证据卡已保存",
     feynmanFeedbackSaved: "费曼反馈已保存",
+    explanationDrafted: "解释草稿已生成",
+    reviewQuestionDrafted: "复习题草稿已生成",
     quoteSaved: "摘录已保存",
     obsidianExported: "已导出 {count} 个 Markdown 文件到 {folder}",
     failedLoadWorkspace: "载入工作区失败",
@@ -315,6 +338,8 @@ const translations = {
     failedSaveEvidenceCard: "保存证据卡失败",
     failedCheckSummary: "检查总结失败",
     failedSaveFeynmanFeedback: "保存费曼反馈失败",
+    failedExplainSelection: "解释选中文本失败",
+    failedMakeReviewQuestion: "生成复习题失败",
     failedSaveQuote: "保存摘录失败",
     failedObsidianExport: "导出到 Obsidian 失败",
     requestFailed: "请求失败",
@@ -570,7 +595,7 @@ function App() {
     setSelectedText(text);
     setSelectionToolbarPosition({
       left: Math.min(Math.max(rect.left + rect.width / 2, 120), window.innerWidth - 120),
-      top: Math.max(rect.top - 52, 12),
+      top: Math.max(rect.top - 72, 12),
     });
   }
 
@@ -607,6 +632,66 @@ function App() {
     setSelectedText("");
     setSelectionToolbarPosition(null);
     window.getSelection()?.removeAllRanges();
+  }
+
+  async function explainSelectedText() {
+    if (!activeChapter || !selectedText.trim()) return;
+    const text = selectedText.trim();
+    setBusy(true);
+    setError("");
+    try {
+      const result = await apiRequest<SelectionExplanationResult>("/selection-explanation", {
+        method: "POST",
+        body: JSON.stringify({
+          workspace,
+          chapter_id: activeChapter.id,
+          selected_text: text,
+        }),
+      });
+      setActiveCapture("note");
+      setNoteType("AI Explanation");
+      setNoteSection("Key Concepts");
+      setNoteText(result.explanation);
+      setMessage(t.explanationDrafted);
+      setSelectedText("");
+      setSelectionToolbarPosition(null);
+      window.getSelection()?.removeAllRanges();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedExplainSelection);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function makeReviewQuestionFromSelection() {
+    if (!activeChapter || !selectedText.trim()) return;
+    const text = selectedText.trim();
+    setBusy(true);
+    setError("");
+    try {
+      const result = await apiRequest<SelectionReviewQuestionResult>(
+        "/selection-review-question",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            workspace,
+            chapter_id: activeChapter.id,
+            selected_text: text,
+          }),
+        },
+      );
+      setActiveCapture("review");
+      setReviewQuestion(result.question);
+      setReviewAnswer(result.answer);
+      setMessage(t.reviewQuestionDrafted);
+      setSelectedText("");
+      setSelectionToolbarPosition(null);
+      window.getSelection()?.removeAllRanges();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedMakeReviewQuestion);
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function updateState(nextState: string) {
@@ -950,6 +1035,16 @@ function App() {
             </button>
             <button type="button" onClick={sendSelectionToEvidenceCard} disabled={busy}>
               {t.makeEvidenceCard}
+            </button>
+            <button type="button" onClick={() => void explainSelectedText()} disabled={busy}>
+              {t.explainSelection}
+            </button>
+            <button
+              type="button"
+              onClick={() => void makeReviewQuestionFromSelection()}
+              disabled={busy}
+            >
+              {t.makeReviewQuestion}
             </button>
           </div>
         )}
