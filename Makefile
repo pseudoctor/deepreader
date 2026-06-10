@@ -3,11 +3,14 @@ VENV := .venv
 VENV_PYTHON := $(VENV)/bin/python
 VENV_PIP := $(VENV)/bin/pip
 
-.PHONY: install-dev lint format test check clean
+.PHONY: install-dev api-dev lint format test check clean
 
 install-dev:
 	$(PYTHON) -m venv $(VENV)
 	$(VENV_PIP) install -e ".[dev]"
+
+api-dev:
+	$(VENV_PYTHON) -m uvicorn deep_reading.api:app --reload
 
 lint:
 	$(VENV_PYTHON) -m ruff check .
