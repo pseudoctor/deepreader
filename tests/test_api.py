@@ -184,6 +184,28 @@ def test_quotes_endpoint_appends_quote_to_chapter_note(tmp_path: Path) -> None:
     assert "> This selected sentence matters." in content
 
 
+def test_feynman_check_endpoint_returns_structured_feedback(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/feynman-check",
+        json={
+            "workspace": str(workspace),
+            "chapter_id": "ch01",
+            "summary": "The chapter says many important things. It compares societies.",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["chapter_id"] == "ch01"
+    assert data["vague_points"]
+    assert data["missing_causal_links"]
+    assert data["unsupported_leaps"]
+    assert "causal mechanism" in data["rewritten_version"]
+
+
 def test_review_cards_endpoint_appends_card(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     client = TestClient(app)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from .errors import ExtractionError
@@ -14,6 +15,28 @@ from .workspace import write
 
 ALLOWED_STATES = {"not-started", "reading", "done", "review"}
 ALLOWED_NOTE_TYPES = {"Quote", "My Thought", "AI Explanation", "Question"}
+CAUSAL_MARKERS = (
+    "because",
+    "therefore",
+    "so",
+    "since",
+    "leads to",
+    "causes",
+    "因",
+    "所以",
+    "导致",
+)
+EVIDENCE_MARKERS = (
+    "evidence",
+    "example",
+    "for example",
+    "according",
+    "quote",
+    "原文",
+    "证据",
+    "例如",
+)
+VAGUE_MARKERS = ("things", "stuff", "important", "interesting", "很多", "一些", "重要", "有趣")
 
 
 def list_chapters(workspace: Path) -> list[dict[str, object]]:
@@ -83,6 +106,68 @@ def read_chapter(workspace: Path, chapter_id: str) -> dict[str, object]:
         "line": chapter["line"],
         "text": get_chapter_text(workspace, chapter_id),
         "reading_guide": build_reading_guide(chapter["id"], chapter["title"]),
+    }
+
+
+def split_summary_sentences(summary: str) -> list[str]:
+    normalized = summary.replace("。", ".").replace("？", "?").replace("！", "!")
+    sentences = []
+    for chunk in normalized.replace("?", ".").replace("!", ".").split("."):
+        sentence = chunk.strip()
+        if sentence:
+            sentences.append(sentence)
+    return sentences
+
+
+def contains_marker(text: str, marker: str) -> bool:
+    if marker.isascii():
+        return re.search(rf"\b{re.escape(marker)}\b", text) is not None
+    return marker in text
+
+
+def check_feynman_summary(workspace: Path, chapter_id: str, summary: str) -> dict[str, object]:
+    chapter = get_chapter(workspace, chapter_id)
+    stripped = summary.strip()
+    if not stripped:
+        raise ExtractionError("Summary cannot be empty")
+
+    lowered = stripped.casefold()
+    sentences = split_summary_sentences(stripped)
+    accurate_points = [
+        sentence
+        for sentence in sentences
+        if len(sentence) >= 40
+        and not any(contains_marker(sentence.casefold(), marker) for marker in VAGUE_MARKERS)
+    ]
+    vague_points = [
+        sentence
+        for sentence in sentences
+        if len(sentence) < 40
+        or any(contains_marker(sentence.casefold(), marker) for marker in VAGUE_MARKERS)
+    ]
+    missing_causal_links = []
+    if not any(contains_marker(lowered, marker) for marker in CAUSAL_MARKERS):
+        missing_causal_links.append(
+            "The summary does not clearly explain the causal link or mechanism."
+        )
+
+    unsupported_leaps = []
+    if not any(contains_marker(lowered, marker) for marker in EVIDENCE_MARKERS):
+        unsupported_leaps.append("The summary does not name a concrete example or evidence.")
+
+    rewritten_version = (
+        f"In {chapter['id']}: {chapter['title']}, the chapter appears to argue that "
+        f"{sentences[0] if sentences else stripped}. To make the explanation stronger, add the "
+        "causal mechanism and one concrete piece of evidence from the text."
+    )
+    return {
+        "chapter_id": chapter["id"],
+        "title": chapter["title"],
+        "accurate_points": accurate_points,
+        "vague_points": vague_points,
+        "missing_causal_links": missing_causal_links,
+        "unsupported_leaps": unsupported_leaps,
+        "rewritten_version": rewritten_version,
     }
 
 

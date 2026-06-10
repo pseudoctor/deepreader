@@ -9,6 +9,7 @@ from deep_reading.service import (
     add_note,
     add_quote,
     add_review_card,
+    check_feynman_summary,
     export_obsidian,
     get_status,
     list_chapters,
@@ -78,6 +79,30 @@ def test_read_chapter_returns_structured_text(tmp_path: Path) -> None:
     assert guide["core_question"].startswith("What problem")
     assert "evidence" in guide["evidence_to_seek"].casefold()
     assert "3-5 sentences" in guide["recall_prompt"]
+
+
+def test_check_feynman_summary_returns_structured_feedback(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    result = check_feynman_summary(
+        workspace,
+        "ch01",
+        "The chapter says many important things. It compares societies.",
+    )
+
+    assert result["chapter_id"] == "ch01"
+    assert result["title"] == "Intro"
+    assert result["vague_points"]
+    assert result["missing_causal_links"]
+    assert result["unsupported_leaps"]
+    assert "causal mechanism" in str(result["rewritten_version"])
+
+
+def test_check_feynman_summary_rejects_empty_summary(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    with pytest.raises(ExtractionError, match="Summary cannot be empty"):
+        check_feynman_summary(workspace, "ch01", " ")
 
 
 def test_update_reading_state_writes_state_file(tmp_path: Path) -> None:

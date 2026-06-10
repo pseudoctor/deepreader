@@ -16,6 +16,7 @@ from .service import (
     add_note,
     add_quote,
     add_review_card,
+    check_feynman_summary,
     export_obsidian,
     get_status,
     list_chapters,
@@ -58,6 +59,12 @@ class QuoteRequest(BaseModel):
     chapter_id: str
     quote: str
     locator: str
+
+
+class FeynmanCheckRequest(BaseModel):
+    workspace: Path
+    chapter_id: str
+    summary: str
 
 
 class ReviewCardRequest(BaseModel):
@@ -128,6 +135,11 @@ def notes(request: NoteRequest) -> dict[str, str]:
 @app.post("/quotes")
 def quotes(request: QuoteRequest) -> dict[str, str]:
     return add_quote(request.workspace, request.chapter_id, request.quote, request.locator)
+
+
+@app.post("/feynman-check")
+def feynman_check(request: FeynmanCheckRequest) -> dict[str, object]:
+    return check_feynman_summary(request.workspace, request.chapter_id, request.summary)
 
 
 @app.post("/review-cards")
