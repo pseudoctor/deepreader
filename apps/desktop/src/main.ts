@@ -1,7 +1,8 @@
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import path from "node:path";
 
 const isDev = Boolean(process.env.DEEP_READING_DESKTOP_DEV_SERVER);
+const workspaceSelectChannel = "workspace:select-folder";
 
 function webDistIndex(): string {
   return path.resolve(__dirname, "../../web/dist/index.html");
@@ -36,6 +37,19 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  ipcMain.handle(workspaceSelectChannel, async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ["openDirectory"],
+      title: "Select Reading Workspace",
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  });
+
   createWindow();
 
   app.on("activate", () => {

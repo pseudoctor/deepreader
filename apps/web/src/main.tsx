@@ -33,6 +33,17 @@ type ObsidianExportResult = {
   files: string[];
 };
 
+type DeepReadingDesktopApi = {
+  platform: string;
+  selectWorkspaceFolder: () => Promise<string | null>;
+};
+
+declare global {
+  interface Window {
+    deepReadingDesktop?: DeepReadingDesktopApi;
+  }
+}
+
 const defaultWorkspace = "workspaces/guns-germs-steel-reading";
 
 type Language = "en" | "zh";
@@ -59,6 +70,7 @@ const translations = {
     appSubtitle: "Workspace reader",
     language: "Language",
     workspace: "Workspace",
+    selectWorkspace: "Choose folder",
     load: "Load",
     status: "Status",
     export: "Export",
@@ -103,6 +115,7 @@ const translations = {
     obsidianExported: "Exported {count} Markdown files to {folder}",
     failedLoadWorkspace: "Failed to load workspace",
     failedLoadChapter: "Failed to load chapter",
+    failedSelectWorkspace: "Failed to choose workspace folder",
     failedUpdateState: "Failed to update state",
     failedSaveNote: "Failed to save note",
     failedSaveReviewCard: "Failed to save review card",
@@ -132,6 +145,7 @@ const translations = {
     appSubtitle: "工作区阅读器",
     language: "语言",
     workspace: "工作区",
+    selectWorkspace: "选择文件夹",
     load: "载入",
     status: "状态",
     export: "导出",
@@ -176,6 +190,7 @@ const translations = {
     obsidianExported: "已导出 {count} 个 Markdown 文件到 {folder}",
     failedLoadWorkspace: "载入工作区失败",
     failedLoadChapter: "载入章节失败",
+    failedSelectWorkspace: "选择工作区文件夹失败",
     failedUpdateState: "更新状态失败",
     failedSaveNote: "保存笔记失败",
     failedSaveReviewCard: "保存复习卡失败",
@@ -280,6 +295,23 @@ function App() {
       setMessage(t.workspaceLoaded);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedLoadWorkspace);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function selectWorkspaceFolder() {
+    if (!window.deepReadingDesktop) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const selectedWorkspace = await window.deepReadingDesktop.selectWorkspaceFolder();
+      if (!selectedWorkspace) return;
+      setWorkspace(selectedWorkspace);
+      await loadWorkspace(selectedWorkspace);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedSelectWorkspace);
     } finally {
       setBusy(false);
     }
@@ -469,6 +501,11 @@ function App() {
             onChange={(event) => setWorkspace(event.target.value)}
             spellCheck={false}
           />
+          {window.deepReadingDesktop && (
+            <button type="button" onClick={() => void selectWorkspaceFolder()} disabled={busy}>
+              {t.selectWorkspace}
+            </button>
+          )}
           <button type="submit" disabled={busy}>
             {t.load}
           </button>
