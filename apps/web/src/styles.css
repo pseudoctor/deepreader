@@ -97,6 +97,27 @@ button:disabled {
   padding: 16px;
 }
 
+.language-switcher {
+  border-bottom: 1px solid #cfd8d0;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 12px 16px;
+}
+
+.language-switcher button {
+  background: #f8f7f2;
+  color: #53625d;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.language-switcher button.active {
+  background: #214d45;
+  border-color: #214d45;
+  color: #fffefa;
+}
+
 label,
 .eyebrow,
 .status-block span {

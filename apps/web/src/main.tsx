@@ -1,4 +1,4 @@
-import React, { FormEvent, useMemo, useState } from "react";
+import React, { FormEvent, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -28,6 +28,166 @@ type ChapterText = {
 
 const defaultWorkspace = "workspaces/guns-germs-steel-reading";
 
+type Language = "en" | "zh";
+
+const languages: { code: Language; label: string }[] = [
+  { code: "en", label: "EN" },
+  { code: "zh", label: "中文" },
+];
+
+const noteSectionOptions = [
+  "Confusions",
+  "Key Concepts",
+  "My 3-5 Sentence Summary",
+  "Applications",
+] as const;
+
+const confidenceOptions = ["High", "Medium", "Low"] as const;
+
+const stateOptions = ["reading", "done", "review"] as const;
+
+const translations = {
+  en: {
+    appTitle: "Deep Reading",
+    appSubtitle: "Workspace reader",
+    language: "Language",
+    workspace: "Workspace",
+    load: "Load",
+    status: "Status",
+    noWorkspaceLoaded: "No workspace loaded",
+    chapters: "Chapters",
+    chapter: "Chapter",
+    noChapter: "No chapter",
+    emptyReader: "Load a workspace to start reading.",
+    capture: "Capture",
+    buildUnderstanding: "Build understanding",
+    captureType: "Capture type",
+    note: "Note",
+    review: "Review",
+    evidence: "Evidence",
+    section: "Section",
+    notePlaceholder: "Write a question, summary, or application...",
+    saveNote: "Save note",
+    question: "Question",
+    reviewQuestionPlaceholder: "What should future me recall?",
+    answer: "Answer",
+    reviewAnswerPlaceholder: "Write the answer in your own words...",
+    saveReviewCard: "Save review card",
+    claim: "Claim",
+    claimPlaceholder: "What claim does this passage support?",
+    locator: "Locator",
+    support: "Support",
+    supportPlaceholder: "Use a brief paraphrase or short excerpt...",
+    confidence: "Confidence",
+    notExplicit: "Not explicit",
+    notExplicitPlaceholder: "What does the source not prove?",
+    myInference: "My inference",
+    inferencePlaceholder: "What are you inferring from it?",
+    saveEvidenceCard: "Save evidence card",
+    working: "Working...",
+    workspaceLoaded: "Workspace loaded",
+    noteSaved: "Note saved",
+    reviewCardSaved: "Review card saved",
+    evidenceCardSaved: "Evidence card saved",
+    failedLoadWorkspace: "Failed to load workspace",
+    failedLoadChapter: "Failed to load chapter",
+    failedUpdateState: "Failed to update state",
+    failedSaveNote: "Failed to save note",
+    failedSaveReviewCard: "Failed to save review card",
+    failedSaveEvidenceCard: "Failed to save evidence card",
+    requestFailed: "Request failed",
+    marked: "marked",
+    stateLabels: {
+      reading: "reading",
+      done: "done",
+      review: "review",
+    },
+    noteSectionLabels: {
+      Confusions: "Confusions",
+      "Key Concepts": "Key Concepts",
+      "My 3-5 Sentence Summary": "My 3-5 Sentence Summary",
+      Applications: "Applications",
+    },
+    confidenceLabels: {
+      High: "High",
+      Medium: "Medium",
+      Low: "Low",
+    },
+  },
+  zh: {
+    appTitle: "深度阅读",
+    appSubtitle: "工作区阅读器",
+    language: "语言",
+    workspace: "工作区",
+    load: "载入",
+    status: "状态",
+    noWorkspaceLoaded: "尚未载入工作区",
+    chapters: "章节",
+    chapter: "章节",
+    noChapter: "未选择章节",
+    emptyReader: "载入一个工作区后开始阅读。",
+    capture: "记录",
+    buildUnderstanding: "构建理解",
+    captureType: "记录类型",
+    note: "笔记",
+    review: "复习卡",
+    evidence: "证据卡",
+    section: "分类",
+    notePlaceholder: "写下问题、总结或可应用之处...",
+    saveNote: "保存笔记",
+    question: "问题",
+    reviewQuestionPlaceholder: "未来的我需要回忆什么？",
+    answer: "答案",
+    reviewAnswerPlaceholder: "用自己的话写下答案...",
+    saveReviewCard: "保存复习卡",
+    claim: "主张",
+    claimPlaceholder: "这段内容支持了什么主张？",
+    locator: "位置",
+    support: "证据",
+    supportPlaceholder: "写简短转述或短摘录...",
+    confidence: "可信度",
+    notExplicit: "未明说",
+    notExplicitPlaceholder: "原文没有证明什么？",
+    myInference: "我的推论",
+    inferencePlaceholder: "你从中推论出了什么？",
+    saveEvidenceCard: "保存证据卡",
+    working: "处理中...",
+    workspaceLoaded: "工作区已载入",
+    noteSaved: "笔记已保存",
+    reviewCardSaved: "复习卡已保存",
+    evidenceCardSaved: "证据卡已保存",
+    failedLoadWorkspace: "载入工作区失败",
+    failedLoadChapter: "载入章节失败",
+    failedUpdateState: "更新状态失败",
+    failedSaveNote: "保存笔记失败",
+    failedSaveReviewCard: "保存复习卡失败",
+    failedSaveEvidenceCard: "保存证据卡失败",
+    requestFailed: "请求失败",
+    marked: "标记为",
+    stateLabels: {
+      reading: "阅读中",
+      done: "已完成",
+      review: "复习",
+    },
+    noteSectionLabels: {
+      Confusions: "困惑",
+      "Key Concepts": "关键概念",
+      "My 3-5 Sentence Summary": "我的 3-5 句总结",
+      Applications: "可应用之处",
+    },
+    confidenceLabels: {
+      High: "高",
+      Medium: "中",
+      Low: "低",
+    },
+  },
+} satisfies Record<Language, Record<string, unknown>>;
+
+function getInitialLanguage(): Language {
+  const storedLanguage = window.localStorage.getItem("deep-reading-language");
+  return storedLanguage === "zh" ? "zh" : "en";
+}
+
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
     headers: { "Content-Type": "application/json", ...init?.headers },
@@ -41,6 +201,8 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 function App() {
+  const [language, setLanguage] = useState<Language>(getInitialLanguage);
+  const t = translations[language];
   const [workspace, setWorkspace] = useState(defaultWorkspace);
   const [status, setStatus] = useState<Status | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
@@ -60,12 +222,17 @@ function App() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    window.localStorage.setItem("deep-reading-language", language);
+    document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
+  }, [language]);
+
   const progressText = useMemo(() => {
-    if (!status) return "No workspace loaded";
+    if (!status) return t.noWorkspaceLoaded;
     return Object.entries(status.progress)
       .map(([key, value]) => `${key}: ${value}`)
       .join(" · ");
-  }, [status]);
+  }, [status, t.noWorkspaceLoaded]);
 
   async function loadWorkspace(nextWorkspace = workspace) {
     setBusy(true);
@@ -82,9 +249,9 @@ function App() {
       if (chapterResult.chapters.length > 0) {
         await loadChapter(chapterResult.chapters[0].id, nextWorkspace);
       }
-      setMessage("Workspace loaded");
+      setMessage(t.workspaceLoaded);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load workspace");
+      setError(err instanceof Error ? err.message : t.failedLoadWorkspace);
     } finally {
       setBusy(false);
     }
@@ -99,7 +266,7 @@ function App() {
       setActiveChapter(chapter);
       setEvidenceLocator(`${chapter.id}: ${chapter.title}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load chapter");
+      setError(err instanceof Error ? err.message : t.failedLoadChapter);
     } finally {
       setBusy(false);
     }
@@ -120,9 +287,9 @@ function App() {
       });
       await loadWorkspace(workspace);
       await loadChapter(activeChapter.id, workspace);
-      setMessage(`${activeChapter.id} marked ${nextState}`);
+      setMessage(`${activeChapter.id} ${t.marked} ${t.stateLabels[nextState as keyof typeof t.stateLabels]}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update state");
+      setError(err instanceof Error ? err.message : t.failedUpdateState);
     } finally {
       setBusy(false);
     }
@@ -144,9 +311,9 @@ function App() {
         }),
       });
       setNoteText("");
-      setMessage("Note saved");
+      setMessage(t.noteSaved);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save note");
+      setError(err instanceof Error ? err.message : t.failedSaveNote);
     } finally {
       setBusy(false);
     }
@@ -168,9 +335,9 @@ function App() {
       });
       setReviewQuestion("");
       setReviewAnswer("");
-      setMessage("Review card saved");
+      setMessage(t.reviewCardSaved);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save review card");
+      setError(err instanceof Error ? err.message : t.failedSaveReviewCard);
     } finally {
       setBusy(false);
     }
@@ -198,9 +365,9 @@ function App() {
       setEvidenceSupport("");
       setEvidenceNotExplicit("");
       setEvidenceInference("");
-      setMessage("Evidence card saved");
+      setMessage(t.evidenceCardSaved);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save evidence card");
+      setError(err instanceof Error ? err.message : t.failedSaveEvidenceCard);
     } finally {
       setBusy(false);
     }
@@ -212,10 +379,27 @@ function App() {
         <header className="brand">
           <span className="brand-mark">DR</span>
           <div>
-            <h1>Deep Reading</h1>
-            <p>Workspace reader</p>
+            <h1>{t.appTitle}</h1>
+            <p>{t.appSubtitle}</p>
           </div>
         </header>
+
+        <div className="language-switcher" aria-label={t.language}>
+          {languages.map((option) => (
+            <button
+              key={option.code}
+              className={language === option.code ? "active" : ""}
+              onClick={() => {
+                setLanguage(option.code);
+                setMessage("");
+                setError("");
+              }}
+              type="button"
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
 
         <form
           className="workspace-form"
@@ -224,7 +408,7 @@ function App() {
             void loadWorkspace();
           }}
         >
-          <label htmlFor="workspace">Workspace</label>
+          <label htmlFor="workspace">{t.workspace}</label>
           <input
             id="workspace"
             value={workspace}
@@ -232,16 +416,16 @@ function App() {
             spellCheck={false}
           />
           <button type="submit" disabled={busy}>
-            Load
+            {t.load}
           </button>
         </form>
 
         <div className="status-block">
-          <span>Status</span>
+          <span>{t.status}</span>
           <strong>{progressText}</strong>
         </div>
 
-        <nav className="chapter-list" aria-label="Chapters">
+        <nav className="chapter-list" aria-label={t.chapters}>
           {chapters.map((chapter) => (
             <button
               key={chapter.id}
@@ -251,7 +435,7 @@ function App() {
             >
               <span>{chapter.id}</span>
               <strong>{chapter.title}</strong>
-              <em>{chapter.state}</em>
+              <em>{t.stateLabels[chapter.state as keyof typeof t.stateLabels] ?? chapter.state}</em>
             </button>
           ))}
         </nav>
@@ -260,39 +444,39 @@ function App() {
       <section className="reader-pane">
         <div className="reader-toolbar">
           <div>
-            <span className="eyebrow">Chapter</span>
-            <h2>{activeChapter ? `${activeChapter.id}: ${activeChapter.title}` : "No chapter"}</h2>
+            <span className="eyebrow">{t.chapter}</span>
+            <h2>{activeChapter ? `${activeChapter.id}: ${activeChapter.title}` : t.noChapter}</h2>
           </div>
           <div className="state-actions">
-            {["reading", "done", "review"].map((stateName) => (
+            {stateOptions.map((stateName) => (
               <button
                 key={stateName}
                 onClick={() => void updateState(stateName)}
                 disabled={!activeChapter || busy}
                 type="button"
               >
-                {stateName}
+                {t.stateLabels[stateName]}
               </button>
             ))}
           </div>
         </div>
 
         <article className="chapter-text">
-          {activeChapter ? activeChapter.text : "Load a workspace to start reading."}
+          {activeChapter ? activeChapter.text : t.emptyReader}
         </article>
       </section>
 
       <aside className="notes-pane">
         <header>
-          <span className="eyebrow">Capture</span>
-          <h2>Build understanding</h2>
+          <span className="eyebrow">{t.capture}</span>
+          <h2>{t.buildUnderstanding}</h2>
         </header>
 
-        <div className="capture-tabs" role="tablist" aria-label="Capture type">
+        <div className="capture-tabs" role="tablist" aria-label={t.captureType}>
           {[
-            ["note", "Note"],
-            ["review", "Review"],
-            ["evidence", "Evidence"],
+            ["note", t.note],
+            ["review", t.review],
+            ["evidence", t.evidence],
           ].map(([id, label]) => (
             <button
               key={id}
@@ -307,72 +491,73 @@ function App() {
 
         {activeCapture === "note" && (
           <form onSubmit={saveNote} className="capture-form">
-            <label htmlFor="section">Section</label>
+            <label htmlFor="section">{t.section}</label>
             <select
               id="section"
               value={noteSection}
               onChange={(event) => setNoteSection(event.target.value)}
             >
-              <option>Confusions</option>
-              <option>Key Concepts</option>
-              <option>My 3-5 Sentence Summary</option>
-              <option>Applications</option>
+              {noteSectionOptions.map((section) => (
+                <option key={section} value={section}>
+                  {t.noteSectionLabels[section]}
+                </option>
+              ))}
             </select>
 
-            <label htmlFor="note">Note</label>
+            <label htmlFor="note">{t.note}</label>
             <textarea
               id="note"
               value={noteText}
               onChange={(event) => setNoteText(event.target.value)}
-              placeholder="Write a question, summary, or application..."
+              placeholder={t.notePlaceholder}
             />
 
             <button type="submit" disabled={!activeChapter || busy || !noteText.trim()}>
-              Save note
+              {t.saveNote}
             </button>
           </form>
         )}
 
         {activeCapture === "review" && (
           <form onSubmit={saveReviewCard} className="capture-form">
-            <label htmlFor="review-question">Question</label>
+            <label htmlFor="review-question">{t.question}</label>
             <textarea
               id="review-question"
               className="compact"
               value={reviewQuestion}
               onChange={(event) => setReviewQuestion(event.target.value)}
-              placeholder="What should future me recall?"
+              placeholder={t.reviewQuestionPlaceholder}
             />
 
-            <label htmlFor="review-answer">Answer</label>
+            <label htmlFor="review-answer">{t.answer}</label>
             <textarea
               id="review-answer"
               value={reviewAnswer}
               onChange={(event) => setReviewAnswer(event.target.value)}
-              placeholder="Write the answer in your own words..."
+              placeholder={t.reviewAnswerPlaceholder}
             />
 
             <button
               type="submit"
               disabled={busy || !reviewQuestion.trim() || !reviewAnswer.trim()}
             >
-              Save review card
+              {t.saveReviewCard}
             </button>
           </form>
         )}
 
         {activeCapture === "evidence" && (
           <form onSubmit={saveEvidenceCard} className="capture-form">
-            <label htmlFor="evidence-claim">Claim</label>
+            <label htmlFor="evidence-claim">{t.claim}</label>
             <textarea
               id="evidence-claim"
               className="compact"
               value={evidenceClaim}
               onChange={(event) => setEvidenceClaim(event.target.value)}
-              placeholder="What claim does this passage support?"
+              placeholder={t.claimPlaceholder}
             />
 
-            <label htmlFor="evidence-locator">Locator</label>
+            <label htmlFor="evidence-locator">{t.locator}</label>
             <input
               id="evidence-locator"
               value={evidenceLocator}
@@ -380,41 +565,43 @@ function App() {
               spellCheck={false}
             />
 
-            <label htmlFor="evidence-support">Support</label>
+            <label htmlFor="evidence-support">{t.support}</label>
             <textarea
               id="evidence-support"
               value={evidenceSupport}
               onChange={(event) => setEvidenceSupport(event.target.value)}
-              placeholder="Use a brief paraphrase or short excerpt..."
+              placeholder={t.supportPlaceholder}
             />
 
-            <label htmlFor="evidence-confidence">Confidence</label>
+            <label htmlFor="evidence-confidence">{t.confidence}</label>
             <select
               id="evidence-confidence"
               value={evidenceConfidence}
               onChange={(event) => setEvidenceConfidence(event.target.value)}
             >
-              <option>High</option>
-              <option>Medium</option>
-              <option>Low</option>
+              {confidenceOptions.map((confidence) => (
+                <option key={confidence} value={confidence}>
+                  {t.confidenceLabels[confidence]}
+                </option>
+              ))}
             </select>
 
-            <label htmlFor="evidence-not-explicit">Not explicit</label>
+            <label htmlFor="evidence-not-explicit">{t.notExplicit}</label>
             <textarea
               id="evidence-not-explicit"
               className="compact"
               value={evidenceNotExplicit}
               onChange={(event) => setEvidenceNotExplicit(event.target.value)}
-              placeholder="What does the source not prove?"
+              placeholder={t.notExplicitPlaceholder}
             />
 
-            <label htmlFor="evidence-inference">My inference</label>
+            <label htmlFor="evidence-inference">{t.myInference}</label>
             <textarea
               id="evidence-inference"
               className="compact"
               value={evidenceInference}
               onChange={(event) => setEvidenceInference(event.target.value)}
-              placeholder="What are you inferring from it?"
+              placeholder={t.inferencePlaceholder}
             />
 
             <button
@@ -426,13 +613,13 @@ function App() {
                 !evidenceSupport.trim()
               }
             >
-              Save evidence card
+              {t.saveEvidenceCard}
             </button>
           </form>
         )}
 
         <div className="message-stack" aria-live="polite">
-          {busy && <p className="muted">Working...</p>}
+          {busy && <p className="muted">{t.working}</p>}
           {message && <p className="success">{message}</p>}
           {error && <p className="error">{error}</p>}
         </div>
