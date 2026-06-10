@@ -90,6 +90,7 @@ button:disabled {
 }
 
 .workspace-form,
+.export-form,
 .status-block {
   border-bottom: 1px solid #cfd8d0;
   display: grid;
@@ -209,6 +210,7 @@ textarea {
 
 .state-actions button,
 .workspace-form button,
+.export-form button,
 .capture-form button {
   background: #214d45;
   border-color: #214d45;

@@ -14,6 +14,7 @@ from .service import (
     add_evidence_card,
     add_note,
     add_review_card,
+    export_obsidian,
     get_status,
     list_chapters,
     read_chapter,
@@ -54,6 +55,11 @@ class EvidenceCardRequest(BaseModel):
     confidence: str = Field(pattern="^(High|Medium|Low)$")
     not_explicit: str = "TBD"
     inference: str = "TBD"
+
+
+class ObsidianExportRequest(BaseModel):
+    workspace: Path
+    vault_folder: Path
 
 
 @app.exception_handler(ExtractionError)
@@ -110,3 +116,8 @@ def evidence_cards(request: EvidenceCardRequest) -> dict[str, str]:
         request.not_explicit,
         request.inference,
     )
+
+
+@app.post("/obsidian-export")
+def obsidian_export(request: ObsidianExportRequest) -> dict[str, object]:
+    return export_obsidian(request.workspace, request.vault_folder)

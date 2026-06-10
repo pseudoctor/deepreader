@@ -178,3 +178,22 @@ def test_evidence_cards_endpoint_appends_card(tmp_path: Path) -> None:
     content = Path(data["path"]).read_text(encoding="utf-8")
     assert "The chapter starts with a comparison problem." in content
     assert "**Confidence** High" in content
+
+
+def test_obsidian_export_endpoint_exports_workspace_markdown(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    vault_folder = tmp_path / "vault" / "reading"
+    client = TestClient(app)
+
+    response = client.post(
+        "/obsidian-export",
+        json={"workspace": str(workspace), "vault_folder": str(vault_folder)},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["vault_folder"] == str(vault_folder)
+    assert data["markdown_files_exported"] > 0
+    assert data["index_path"] == str(vault_folder / "index.md")
+    assert (vault_folder / "index.md").exists()
+    assert (vault_folder / "reading-plan.md").exists()

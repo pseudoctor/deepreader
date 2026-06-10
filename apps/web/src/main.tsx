@@ -26,6 +26,13 @@ type ChapterText = {
   text: string;
 };
 
+type ObsidianExportResult = {
+  vault_folder: string;
+  markdown_files_exported: number;
+  index_path: string;
+  files: string[];
+};
+
 const defaultWorkspace = "workspaces/guns-germs-steel-reading";
 
 type Language = "en" | "zh";
@@ -54,6 +61,10 @@ const translations = {
     workspace: "Workspace",
     load: "Load",
     status: "Status",
+    export: "Export",
+    obsidianFolder: "Obsidian folder",
+    obsidianFolderPlaceholder: "/Users/me/ObsidianVault/Reading/book-name",
+    exportToObsidian: "Export to Obsidian",
     noWorkspaceLoaded: "No workspace loaded",
     chapters: "Chapters",
     chapter: "Chapter",
@@ -89,12 +100,14 @@ const translations = {
     noteSaved: "Note saved",
     reviewCardSaved: "Review card saved",
     evidenceCardSaved: "Evidence card saved",
+    obsidianExported: "Exported {count} Markdown files to {folder}",
     failedLoadWorkspace: "Failed to load workspace",
     failedLoadChapter: "Failed to load chapter",
     failedUpdateState: "Failed to update state",
     failedSaveNote: "Failed to save note",
     failedSaveReviewCard: "Failed to save review card",
     failedSaveEvidenceCard: "Failed to save evidence card",
+    failedObsidianExport: "Failed to export to Obsidian",
     requestFailed: "Request failed",
     marked: "marked",
     stateLabels: {
@@ -121,6 +134,10 @@ const translations = {
     workspace: "工作区",
     load: "载入",
     status: "状态",
+    export: "导出",
+    obsidianFolder: "Obsidian 文件夹",
+    obsidianFolderPlaceholder: "/Users/me/ObsidianVault/Reading/book-name",
+    exportToObsidian: "导出到 Obsidian",
     noWorkspaceLoaded: "尚未载入工作区",
     chapters: "章节",
     chapter: "章节",
@@ -156,12 +173,14 @@ const translations = {
     noteSaved: "笔记已保存",
     reviewCardSaved: "复习卡已保存",
     evidenceCardSaved: "证据卡已保存",
+    obsidianExported: "已导出 {count} 个 Markdown 文件到 {folder}",
     failedLoadWorkspace: "载入工作区失败",
     failedLoadChapter: "载入章节失败",
     failedUpdateState: "更新状态失败",
     failedSaveNote: "保存笔记失败",
     failedSaveReviewCard: "保存复习卡失败",
     failedSaveEvidenceCard: "保存证据卡失败",
+    failedObsidianExport: "导出到 Obsidian 失败",
     requestFailed: "请求失败",
     marked: "标记为",
     stateLabels: {
@@ -186,6 +205,10 @@ const translations = {
 function getInitialLanguage(): Language {
   const storedLanguage = window.localStorage.getItem("deep-reading-language");
   return storedLanguage === "zh" ? "zh" : "en";
+}
+
+function getInitialObsidianFolder(): string {
+  return window.localStorage.getItem("deep-reading-obsidian-folder") ?? "";
 }
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -218,6 +241,7 @@ function App() {
   const [evidenceConfidence, setEvidenceConfidence] = useState("Medium");
   const [evidenceNotExplicit, setEvidenceNotExplicit] = useState("");
   const [evidenceInference, setEvidenceInference] = useState("");
+  const [obsidianFolder, setObsidianFolder] = useState(getInitialObsidianFolder);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -226,6 +250,10 @@ function App() {
     window.localStorage.setItem("deep-reading-language", language);
     document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
   }, [language]);
+
+  useEffect(() => {
+    window.localStorage.setItem("deep-reading-obsidian-folder", obsidianFolder);
+  }, [obsidianFolder]);
 
   const progressText = useMemo(() => {
     if (!status) return t.noWorkspaceLoaded;
@@ -373,6 +401,32 @@ function App() {
     }
   }
 
+  async function exportToObsidian(event: FormEvent) {
+    event.preventDefault();
+    if (!obsidianFolder.trim()) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await apiRequest<ObsidianExportResult>("/obsidian-export", {
+        method: "POST",
+        body: JSON.stringify({
+          workspace,
+          vault_folder: obsidianFolder.trim(),
+        }),
+      });
+      setMessage(
+        t.obsidianExported
+          .replace("{count}", String(result.markdown_files_exported))
+          .replace("{folder}", result.vault_folder),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedObsidianExport);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -424,6 +478,21 @@ function App() {
           <span>{t.status}</span>
           <strong>{progressText}</strong>
         </div>
+
+        <form className="export-form" onSubmit={exportToObsidian}>
+          <span className="eyebrow">{t.export}</span>
+          <label htmlFor="obsidian-folder">{t.obsidianFolder}</label>
+          <input
+            id="obsidian-folder"
+            value={obsidianFolder}
+            onChange={(event) => setObsidianFolder(event.target.value)}
+            placeholder={t.obsidianFolderPlaceholder}
+            spellCheck={false}
+          />
+          <button type="submit" disabled={busy || !obsidianFolder.trim()}>
+            {t.exportToObsidian}
+          </button>
+        </form>
 
         <nav className="chapter-list" aria-label={t.chapters}>
           {chapters.map((chapter) => (
