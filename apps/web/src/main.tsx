@@ -33,6 +33,11 @@ type ObsidianExportResult = {
   files: string[];
 };
 
+type SelectionToolbarPosition = {
+  left: number;
+  top: number;
+};
+
 type DeepReadingDesktopApi = {
   apiBaseUrl: string;
   platform: string;
@@ -93,6 +98,9 @@ const translations = {
     note: "Note",
     review: "Review",
     evidence: "Evidence",
+    selectedText: "Selected text",
+    saveQuote: "Save quote",
+    makeEvidenceCard: "Make evidence card",
     section: "Section",
     notePlaceholder: "Write a question, summary, or application...",
     saveNote: "Save note",
@@ -117,6 +125,7 @@ const translations = {
     noteSaved: "Note saved",
     reviewCardSaved: "Review card saved",
     evidenceCardSaved: "Evidence card saved",
+    quoteSaved: "Quote saved",
     obsidianExported: "Exported {count} Markdown files to {folder}",
     failedLoadWorkspace: "Failed to load workspace",
     failedLoadChapter: "Failed to load chapter",
@@ -126,6 +135,7 @@ const translations = {
     failedSaveNote: "Failed to save note",
     failedSaveReviewCard: "Failed to save review card",
     failedSaveEvidenceCard: "Failed to save evidence card",
+    failedSaveQuote: "Failed to save quote",
     failedObsidianExport: "Failed to export to Obsidian",
     requestFailed: "Request failed",
     marked: "marked",
@@ -172,6 +182,9 @@ const translations = {
     note: "笔记",
     review: "复习卡",
     evidence: "证据卡",
+    selectedText: "已选文本",
+    saveQuote: "保存摘录",
+    makeEvidenceCard: "转为证据卡",
     section: "分类",
     notePlaceholder: "写下问题、总结或可应用之处...",
     saveNote: "保存笔记",
@@ -196,6 +209,7 @@ const translations = {
     noteSaved: "笔记已保存",
     reviewCardSaved: "复习卡已保存",
     evidenceCardSaved: "证据卡已保存",
+    quoteSaved: "摘录已保存",
     obsidianExported: "已导出 {count} 个 Markdown 文件到 {folder}",
     failedLoadWorkspace: "载入工作区失败",
     failedLoadChapter: "载入章节失败",
@@ -205,6 +219,7 @@ const translations = {
     failedSaveNote: "保存笔记失败",
     failedSaveReviewCard: "保存复习卡失败",
     failedSaveEvidenceCard: "保存证据卡失败",
+    failedSaveQuote: "保存摘录失败",
     failedObsidianExport: "导出到 Obsidian 失败",
     requestFailed: "请求失败",
     marked: "标记为",
@@ -279,6 +294,9 @@ function App() {
   const [evidenceConfidence, setEvidenceConfidence] = useState("Medium");
   const [evidenceNotExplicit, setEvidenceNotExplicit] = useState("");
   const [evidenceInference, setEvidenceInference] = useState("");
+  const [selectedText, setSelectedText] = useState("");
+  const [selectionToolbarPosition, setSelectionToolbarPosition] =
+    useState<SelectionToolbarPosition | null>(null);
   const [obsidianFolder, setObsidianFolder] = useState(getInitialObsidianFolder);
   const [recentWorkspaces, setRecentWorkspaces] = useState<string[]>(getInitialRecentWorkspaces);
   const [busy, setBusy] = useState(false);
@@ -307,6 +325,11 @@ function App() {
       .map(([key, value]) => `${key}: ${value}`)
       .join(" · ");
   }, [status, t.noWorkspaceLoaded]);
+
+  useEffect(() => {
+    document.addEventListener("selectionchange", handleTextSelection);
+    return () => document.removeEventListener("selectionchange", handleTextSelection);
+  });
 
   async function loadWorkspace(nextWorkspace = workspace) {
     setBusy(true);
@@ -376,11 +399,77 @@ function App() {
       const chapter = await apiRequest<ChapterText>(`/chapter-text?${query.toString()}`);
       setActiveChapter(chapter);
       setEvidenceLocator(`${chapter.id}: ${chapter.title}`);
+      setSelectedText("");
+      setSelectionToolbarPosition(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedLoadChapter);
     } finally {
       setBusy(false);
     }
+  }
+
+  function handleTextSelection() {
+    if (!activeChapter) return;
+    const selection = window.getSelection();
+    const text = selection?.toString().trim() ?? "";
+    if (!selection || text.length === 0 || selection.rangeCount === 0) {
+      setSelectedText("");
+      setSelectionToolbarPosition(null);
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    const container =
+      range.commonAncestorContainer.nodeType === Node.TEXT_NODE
+        ? range.commonAncestorContainer.parentElement
+        : (range.commonAncestorContainer as Element);
+    if (!container?.closest(".chapter-text")) {
+      setSelectedText("");
+      setSelectionToolbarPosition(null);
+      return;
+    }
+
+    const rect = range.getBoundingClientRect();
+    setSelectedText(text);
+    setSelectionToolbarPosition({
+      left: Math.min(Math.max(rect.left + rect.width / 2, 120), window.innerWidth - 120),
+      top: Math.max(rect.top - 52, 12),
+    });
+  }
+
+  async function saveSelectedQuote() {
+    if (!activeChapter || !selectedText.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      await apiRequest("/quotes", {
+        method: "POST",
+        body: JSON.stringify({
+          workspace,
+          chapter_id: activeChapter.id,
+          quote: selectedText.trim(),
+          locator: `${activeChapter.id}: ${activeChapter.title}`,
+        }),
+      });
+      setMessage(t.quoteSaved);
+      setSelectedText("");
+      setSelectionToolbarPosition(null);
+      window.getSelection()?.removeAllRanges();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedSaveQuote);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function sendSelectionToEvidenceCard() {
+    if (!activeChapter || !selectedText.trim()) return;
+    setActiveCapture("evidence");
+    setEvidenceLocator(`${activeChapter.id}: ${activeChapter.title}`);
+    setEvidenceSupport(selectedText.trim());
+    setSelectedText("");
+    setSelectionToolbarPosition(null);
+    window.getSelection()?.removeAllRanges();
   }
 
   async function updateState(nextState: string) {
@@ -628,6 +717,24 @@ function App() {
       </aside>
 
       <section className="reader-pane">
+        {selectionToolbarPosition && selectedText && (
+          <div
+            className="selection-toolbar"
+            style={{
+              left: selectionToolbarPosition.left,
+              top: selectionToolbarPosition.top,
+            }}
+            aria-label={t.selectedText}
+          >
+            <button type="button" onClick={() => void saveSelectedQuote()} disabled={busy}>
+              {t.saveQuote}
+            </button>
+            <button type="button" onClick={sendSelectionToEvidenceCard} disabled={busy}>
+              {t.makeEvidenceCard}
+            </button>
+          </div>
+        )}
+
         <div className="reader-toolbar">
           <div>
             <span className="eyebrow">{t.chapter}</span>
@@ -647,7 +754,7 @@ function App() {
           </div>
         </div>
 
-        <article className="chapter-text">
+        <article className="chapter-text" onMouseUp={handleTextSelection} onKeyUp={handleTextSelection}>
           {activeChapter ? activeChapter.text : t.emptyReader}
         </article>
       </section>

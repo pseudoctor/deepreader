@@ -14,6 +14,7 @@ from .errors import ExtractionError
 from .service import (
     add_evidence_card,
     add_note,
+    add_quote,
     add_review_card,
     export_obsidian,
     get_status,
@@ -46,6 +47,13 @@ class NoteRequest(BaseModel):
     chapter_id: str
     section: str
     text: str
+
+
+class QuoteRequest(BaseModel):
+    workspace: Path
+    chapter_id: str
+    quote: str
+    locator: str
 
 
 class ReviewCardRequest(BaseModel):
@@ -105,6 +113,11 @@ def state(request: StateRequest) -> dict[str, str]:
 @app.post("/notes")
 def notes(request: NoteRequest) -> dict[str, str]:
     return add_note(request.workspace, request.chapter_id, request.section, request.text)
+
+
+@app.post("/quotes")
+def quotes(request: QuoteRequest) -> dict[str, str]:
+    return add_quote(request.workspace, request.chapter_id, request.quote, request.locator)
 
 
 @app.post("/review-cards")

@@ -7,6 +7,7 @@ from deep_reading.service import (
     add_evidence_card,
     add_insight,
     add_note,
+    add_quote,
     add_review_card,
     export_obsidian,
     get_status,
@@ -100,6 +101,24 @@ def test_add_note_returns_written_path(tmp_path: Path) -> None:
     assert result["chapter_id"] == "ch01"
     assert Path(result["path"]).exists()
     assert "What is the main distinction?" in Path(result["path"]).read_text(encoding="utf-8")
+
+
+def test_add_quote_appends_selected_text_to_chapter_note(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    result = add_quote(
+        workspace,
+        "ch01",
+        "This selected sentence matters.",
+        "ch01: Intro",
+    )
+
+    assert result["kind"] == "quote"
+    assert result["chapter_id"] == "ch01"
+    content = Path(result["path"]).read_text(encoding="utf-8")
+    assert "## Quote" in content
+    assert "**Locator** ch01: Intro" in content
+    assert "> This selected sentence matters." in content
 
 
 def test_add_insight_review_and_evidence_cards_return_paths(tmp_path: Path) -> None:

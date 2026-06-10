@@ -96,6 +96,28 @@ def add_note(workspace: Path, chapter_id: str, section: str, text: str) -> dict[
     }
 
 
+def add_quote(workspace: Path, chapter_id: str, quote: str, locator: str) -> dict[str, str]:
+    path = chapter_note_path(workspace, chapter_id)
+    append_text(
+        path,
+        "\n".join(
+            [
+                "## Quote",
+                "",
+                f"**Locator** {locator}",
+                "",
+                "> " + quote.strip().replace("\n", "\n> "),
+            ]
+        ),
+    )
+    return {
+        "kind": "quote",
+        "chapter_id": chapter_id,
+        "locator": locator,
+        "path": str(path),
+    }
+
+
 def add_insight(workspace: Path, text: str) -> dict[str, str]:
     ensure_workspace(workspace)
     path = workspace / "personal_insights.md"

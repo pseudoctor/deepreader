@@ -134,6 +134,29 @@ def test_notes_endpoint_appends_chapter_note(tmp_path: Path) -> None:
     )
 
 
+def test_quotes_endpoint_appends_quote_to_chapter_note(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/quotes",
+        json={
+            "workspace": str(workspace),
+            "chapter_id": "ch01",
+            "quote": "This selected sentence matters.",
+            "locator": "ch01: Intro",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["kind"] == "quote"
+    assert data["chapter_id"] == "ch01"
+    content = Path(data["path"]).read_text(encoding="utf-8")
+    assert "**Locator** ch01: Intro" in content
+    assert "> This selected sentence matters." in content
+
+
 def test_review_cards_endpoint_appends_card(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     client = TestClient(app)
