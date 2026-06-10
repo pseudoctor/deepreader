@@ -188,7 +188,7 @@ textarea {
 
 .state-actions button,
 .workspace-form button,
-.note-form button {
+.capture-form button {
   background: #214d45;
   border-color: #214d45;
   color: #fffefa;
@@ -210,7 +210,32 @@ textarea {
   padding: 18px 20px;
 }
 
-.note-form {
+.capture-tabs {
+  background: #dfe7e1;
+  border: 1px solid #c2cec6;
+  display: grid;
+  gap: 2px;
+  grid-template-columns: repeat(3, 1fr);
+  margin-bottom: 16px;
+  padding: 3px;
+}
+
+.capture-tabs button {
+  background: transparent;
+  border: 0;
+  color: #53625d;
+  font-size: 0.84rem;
+  font-weight: 700;
+  min-height: 34px;
+}
+
+.capture-tabs button.active {
+  background: #fffefa;
+  color: #214d45;
+  outline: 1px solid #bdc9c1;
+}
+
+.capture-form {
   display: grid;
   gap: 10px;
 }
@@ -218,6 +243,10 @@ textarea {
 textarea {
   min-height: 180px;
   resize: vertical;
+}
+
+textarea.compact {
+  min-height: 86px;
 }
 
 .message-stack {
