@@ -24,6 +24,11 @@ type ChapterText = {
   title: string;
   line: number;
   text: string;
+  reading_guide: {
+    core_question: string;
+    evidence_to_seek: string;
+    recall_prompt: string;
+  };
 };
 
 type ObsidianExportResult = {
@@ -92,6 +97,10 @@ const translations = {
     noWorkspaceLoaded: "No workspace loaded",
     chapters: "Chapters",
     chapter: "Chapter",
+    beforeReading: "Before reading",
+    coreQuestion: "Core question",
+    evidenceToSeek: "Evidence to seek",
+    afterReadingRecall: "After-reading recall",
     noChapter: "No chapter",
     emptyReader: "Load a workspace to start reading.",
     capture: "Capture",
@@ -183,6 +192,10 @@ const translations = {
     noWorkspaceLoaded: "尚未载入工作区",
     chapters: "章节",
     chapter: "章节",
+    beforeReading: "读前问题",
+    coreQuestion: "本章要解决什么",
+    evidenceToSeek: "阅读时寻找什么证据",
+    afterReadingRecall: "读完后要回答什么",
     noChapter: "未选择章节",
     emptyReader: "载入一个工作区后开始阅读。",
     capture: "记录",
@@ -772,7 +785,31 @@ function App() {
           </div>
         </div>
 
-        <article className="chapter-text" onMouseUp={handleTextSelection} onKeyUp={handleTextSelection}>
+        {activeChapter && (
+          <section className="reading-guide" aria-label={t.beforeReading}>
+            <span className="eyebrow">{t.beforeReading}</span>
+            <div className="reading-guide-grid">
+              <article>
+                <h3>{t.coreQuestion}</h3>
+                <p>{activeChapter.reading_guide.core_question}</p>
+              </article>
+              <article>
+                <h3>{t.evidenceToSeek}</h3>
+                <p>{activeChapter.reading_guide.evidence_to_seek}</p>
+              </article>
+              <article>
+                <h3>{t.afterReadingRecall}</h3>
+                <p>{activeChapter.reading_guide.recall_prompt}</p>
+              </article>
+            </div>
+          </section>
+        )}
+
+        <article
+          className="chapter-text"
+          onMouseUp={handleTextSelection}
+          onKeyUp={handleTextSelection}
+        >
           {activeChapter ? activeChapter.text : t.emptyReader}
         </article>
       </section>

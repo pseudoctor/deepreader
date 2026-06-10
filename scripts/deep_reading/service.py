@@ -60,6 +60,21 @@ def get_status(workspace: Path) -> dict[str, object]:
     }
 
 
+def build_reading_guide(chapter_id: str, title: str) -> dict[str, str]:
+    chapter_label = f"{chapter_id}: {title}"
+    return {
+        "core_question": f"What problem or shift is {chapter_label} trying to clarify?",
+        "evidence_to_seek": (
+            "What evidence, concrete examples, comparisons, definitions, or causal links "
+            "support the chapter's main claim?"
+        ),
+        "recall_prompt": (
+            "After reading, explain the chapter's main claim in 3-5 sentences and name "
+            "one piece of evidence that supports it."
+        ),
+    }
+
+
 def read_chapter(workspace: Path, chapter_id: str) -> dict[str, object]:
     chapter = get_chapter(workspace, chapter_id)
     return {
@@ -67,6 +82,7 @@ def read_chapter(workspace: Path, chapter_id: str) -> dict[str, object]:
         "title": chapter["title"],
         "line": chapter["line"],
         "text": get_chapter_text(workspace, chapter_id),
+        "reading_guide": build_reading_guide(chapter["id"], chapter["title"]),
     }
 
 

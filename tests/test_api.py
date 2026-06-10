@@ -68,6 +68,9 @@ def test_chapter_text_endpoint_returns_one_chapter(tmp_path: Path) -> None:
     assert data["id"] == "ch01"
     assert "Chapter 1 Intro" in data["text"]
     assert "Chapter 2 Practice" not in data["text"]
+    assert data["reading_guide"]["core_question"].startswith("What problem")
+    assert "evidence" in data["reading_guide"]["evidence_to_seek"].casefold()
+    assert "3-5 sentences" in data["reading_guide"]["recall_prompt"]
 
 
 def test_chapter_text_endpoint_returns_structured_error(tmp_path: Path) -> None:

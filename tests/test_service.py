@@ -74,6 +74,10 @@ def test_read_chapter_returns_structured_text(tmp_path: Path) -> None:
     assert chapter["title"] == "Intro"
     assert "Chapter 1 Intro" in str(chapter["text"])
     assert "Chapter 2 Practice" not in str(chapter["text"])
+    guide = chapter["reading_guide"]
+    assert guide["core_question"].startswith("What problem")
+    assert "evidence" in guide["evidence_to_seek"].casefold()
+    assert "3-5 sentences" in guide["recall_prompt"]
 
 
 def test_update_reading_state_writes_state_file(tmp_path: Path) -> None:
