@@ -672,6 +672,143 @@ def save_evidence_table(workspace: Path, result: dict[str, object]) -> dict[str,
     return {"kind": "evidence_table", "path": str(path)}
 
 
+def build_concept_map(workspace: Path) -> dict[str, object]:
+    metadata = load_metadata(workspace)
+    state = load_state(workspace)
+    learning_loop = build_learning_loop(workspace, metadata, state)
+    evidence_table = build_evidence_table(workspace)
+    chapters = learning_loop["chapters"]
+    weak_concepts = learning_loop["weak_concepts"]
+    evidence_cards = evidence_table["cards"]
+    assert isinstance(chapters, list)
+    assert isinstance(weak_concepts, list)
+    assert isinstance(evidence_cards, list)
+
+    nodes: list[dict[str, object]] = []
+    links: list[dict[str, str]] = []
+    for chapter in chapters:
+        assert isinstance(chapter, dict)
+        nodes.append(
+            {
+                "id": str(chapter["id"]),
+                "label": f"{chapter['id']}: {chapter['title']}",
+                "type": "chapter",
+                "state": str(chapter["state"]),
+                "mastery_score": int(chapter["mastery_score"]),
+            }
+        )
+
+    for previous, current in zip(chapters, chapters[1:], strict=False):
+        assert isinstance(previous, dict)
+        assert isinstance(current, dict)
+        links.append(
+            {
+                "source": str(previous["id"]),
+                "target": str(current["id"]),
+                "relation": "progresses_to",
+                "evidence": "chapter order",
+            }
+        )
+
+    for item in weak_concepts:
+        if not isinstance(item, dict):
+            continue
+        concept = str(item.get("concept", "")).strip()
+        chapter_id = str(item.get("chapter_id", "")).strip()
+        if not concept or not chapter_id:
+            continue
+        node_id = f"weak:{chapter_id}:{concept}"
+        nodes.append(
+            {
+                "id": node_id,
+                "label": concept,
+                "type": "weak_concept",
+                "state": "weak",
+                "mastery_score": 0,
+            }
+        )
+        links.append(
+            {
+                "source": node_id,
+                "target": chapter_id,
+                "relation": "unclear_in",
+                "evidence": str(item.get("note", "")).strip() or "manual weak concept",
+            }
+        )
+
+    for index, card in enumerate(evidence_cards, start=1):
+        if not isinstance(card, dict):
+            continue
+        claim = str(card.get("claim", "")).strip()
+        locator = str(card.get("source_locator", "")).strip()
+        support = str(card.get("support", "")).strip()
+        if not claim:
+            continue
+        node_id = f"evidence:{index}"
+        nodes.append(
+            {
+                "id": node_id,
+                "label": claim,
+                "type": "evidence",
+                "state": str(card.get("confidence", "")),
+                "mastery_score": 0,
+            }
+        )
+        target = next(
+            (
+                str(chapter["id"])
+                for chapter in chapters
+                if isinstance(chapter, dict) and str(chapter["id"]) in locator
+            ),
+            str(chapters[0]["id"]) if chapters and isinstance(chapters[0], dict) else "",
+        )
+        if target:
+            links.append(
+                {
+                    "source": node_id,
+                    "target": target,
+                    "relation": "supports",
+                    "evidence": support or locator or "evidence card",
+                }
+            )
+
+    return {
+        "node_count": len(nodes),
+        "link_count": len(links),
+        "nodes": nodes,
+        "links": links,
+    }
+
+
+def format_concept_map(result: dict[str, object]) -> str:
+    nodes = result["nodes"]
+    links = result["links"]
+    assert isinstance(nodes, list)
+    assert isinstance(links, list)
+    lines = ["# Concept Map", "", "## Nodes"]
+    for node in nodes:
+        assert isinstance(node, dict)
+        lines.append(
+            f"- **{node.get('label', '')}** "
+            f"({node.get('type', '')}; mastery {node.get('mastery_score', 0)}%)"
+        )
+    lines.extend(["", "## Links"])
+    for link in links:
+        assert isinstance(link, dict)
+        lines.append(
+            f"- {link.get('source', '')} --{link.get('relation', '')}-> "
+            f"{link.get('target', '')}: {link.get('evidence', '')}"
+        )
+    return "\n".join(lines)
+
+
+def save_concept_map(workspace: Path, result: dict[str, object]) -> dict[str, str]:
+    ensure_workspace(workspace)
+    path = workspace / "concept_map.md"
+    write(path, format_concept_map(result) + "\n")
+    return {"kind": "concept_map", "path": str(path)}
+
+
 def save_book_argument_map(workspace: Path, result: dict[str, object]) -> dict[str, str]:
     ensure_workspace(workspace)
     path = workspace / "argument_maps.md"

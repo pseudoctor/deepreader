@@ -11,6 +11,7 @@ from deep_reading.service import (
     add_review_card,
     add_weak_concept,
     build_book_argument_map,
+    build_concept_map,
     build_evidence_table,
     build_one_page_book_account,
     check_feynman_summary,
@@ -23,6 +24,7 @@ from deep_reading.service import (
     read_chapter,
     save_active_recall_cards,
     save_book_argument_map,
+    save_concept_map,
     save_evidence_table,
     save_one_page_book_account,
     synthesize_chapter_window,
@@ -298,6 +300,46 @@ def test_save_evidence_table_writes_markdown_table(tmp_path: Path) -> None:
     assert "# Evidence Table" in content
     assert "| Claim | Source Locator | Support | Confidence | Not Explicit | Inference |" in content
     assert "| Claim | ch01: Intro | Support | Medium | TBD | TBD |" in content
+
+
+def test_build_concept_map_uses_chapters_evidence_and_weak_concepts(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    update_reading_state(workspace, "ch01", "done")
+    add_evidence_card(
+        workspace,
+        "The chapter frames comparison.",
+        "ch01: Intro",
+        "A source detail supports it.",
+        "High",
+    )
+    add_weak_concept(workspace, "causal chain", "ch01", "Mechanism is fuzzy.")
+
+    result = build_concept_map(workspace)
+
+    node_types = {node["type"] for node in result["nodes"]}
+    relations = {link["relation"] for link in result["links"]}
+    labels = {node["label"] for node in result["nodes"]}
+    assert result["node_count"] == 4
+    assert "chapter" in node_types
+    assert "evidence" in node_types
+    assert "weak_concept" in node_types
+    assert "supports" in relations
+    assert "unclear_in" in relations
+    assert "progresses_to" in relations
+    assert "causal chain" in labels
+
+
+def test_save_concept_map_writes_markdown(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    result = build_concept_map(workspace)
+
+    saved = save_concept_map(workspace, result)
+
+    assert saved["kind"] == "concept_map"
+    content = Path(saved["path"]).read_text(encoding="utf-8")
+    assert "# Concept Map" in content
+    assert "## Nodes" in content
+    assert "## Links" in content
 
 
 def test_generate_active_recall_returns_chapter_questions(tmp_path: Path) -> None:

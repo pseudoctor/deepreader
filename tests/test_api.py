@@ -565,6 +565,54 @@ def test_save_evidence_table_endpoint_writes_markdown(tmp_path: Path) -> None:
     assert "| Claim | ch01: Intro | Support | Medium | TBD | TBD |" in content
 
 
+def test_concept_map_endpoint_returns_nodes_and_links(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+    client.post(
+        "/evidence-cards",
+        json={
+            "workspace": str(workspace),
+            "claim": "Claim",
+            "locator": "ch01: Intro",
+            "support": "Support",
+            "confidence": "Medium",
+        },
+    )
+    client.post(
+        "/weak-concepts",
+        json={
+            "workspace": str(workspace),
+            "chapter_id": "ch01",
+            "concept": "causal chain",
+        },
+    )
+
+    response = client.post("/concept-map", json={"workspace": str(workspace)})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["node_count"] == 4
+    assert any(node["type"] == "weak_concept" for node in data["nodes"])
+    assert any(link["relation"] == "supports" for link in data["links"])
+
+
+def test_save_concept_map_endpoint_writes_markdown(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+    result = client.post("/concept-map", json={"workspace": str(workspace)}).json()
+
+    response = client.post(
+        "/concept-map/save",
+        json={"workspace": str(workspace), "result": result},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["kind"] == "concept_map"
+    content = Path(data["path"]).read_text(encoding="utf-8")
+    assert "# Concept Map" in content
+
+
 def test_evidence_cards_endpoint_appends_card(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     client = TestClient(app)

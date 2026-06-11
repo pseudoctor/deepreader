@@ -152,6 +152,28 @@ type EvidenceTableResult = {
   cards: EvidenceTableCard[];
 };
 
+type ConceptMapNode = {
+  id: string;
+  label: string;
+  type: string;
+  state: string;
+  mastery_score: number;
+};
+
+type ConceptMapLink = {
+  source: string;
+  target: string;
+  relation: string;
+  evidence: string;
+};
+
+type ConceptMapResult = {
+  node_count: number;
+  link_count: number;
+  nodes: ConceptMapNode[];
+  links: ConceptMapLink[];
+};
+
 type ActiveRecallQuestion = {
   question: string;
   answer_hint: string;
@@ -331,6 +353,13 @@ const translations = {
     evidenceTableReady: "Evidence table ready",
     evidenceTableSaved: "Evidence table saved",
     evidenceTable: "Evidence table",
+    buildConceptMap: "Build concept map",
+    saveConceptMap: "Save concept map",
+    conceptMapReady: "Concept map ready",
+    conceptMapSaved: "Concept map saved",
+    conceptMap: "Concept map",
+    nodes: "Nodes",
+    links: "Links",
     sourceLocator: "Source locator",
     notExplicitShort: "Not explicit",
     inference: "Inference",
@@ -416,6 +445,8 @@ const translations = {
     failedSaveOnePageAccount: "Failed to save one-page account",
     failedBuildEvidenceTable: "Failed to build evidence table",
     failedSaveEvidenceTable: "Failed to save evidence table",
+    failedBuildConceptMap: "Failed to build concept map",
+    failedSaveConceptMap: "Failed to save concept map",
     failedGenerateRecall: "Failed to generate active recall",
     failedSaveRecall: "Failed to save active recall",
     failedSaveQuote: "Failed to save quote",
@@ -550,6 +581,13 @@ const translations = {
     evidenceTableReady: "证据表已生成",
     evidenceTableSaved: "证据表已保存",
     evidenceTable: "证据表",
+    buildConceptMap: "生成概念图",
+    saveConceptMap: "保存概念图",
+    conceptMapReady: "概念图已生成",
+    conceptMapSaved: "概念图已保存",
+    conceptMap: "概念图",
+    nodes: "节点",
+    links: "关系",
     sourceLocator: "来源位置",
     notExplicitShort: "未明说",
     inference: "推论",
@@ -635,6 +673,8 @@ const translations = {
     failedSaveOnePageAccount: "保存一页书账失败",
     failedBuildEvidenceTable: "生成证据表失败",
     failedSaveEvidenceTable: "保存证据表失败",
+    failedBuildConceptMap: "生成概念图失败",
+    failedSaveConceptMap: "保存概念图失败",
     failedGenerateRecall: "生成主动回忆题失败",
     failedSaveRecall: "保存主动回忆卡失败",
     failedSaveQuote: "保存摘录失败",
@@ -779,6 +819,7 @@ function App() {
   const [onePageBookAccount, setOnePageBookAccount] =
     useState<OnePageBookAccountResult | null>(null);
   const [evidenceTable, setEvidenceTable] = useState<EvidenceTableResult | null>(null);
+  const [conceptMap, setConceptMap] = useState<ConceptMapResult | null>(null);
   const [evidenceClaim, setEvidenceClaim] = useState("");
   const [evidenceLocator, setEvidenceLocator] = useState("");
   const [evidenceSupport, setEvidenceSupport] = useState("");
@@ -1458,6 +1499,43 @@ function App() {
       setMessage(t.evidenceTableSaved);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedSaveEvidenceTable);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function buildConceptMap() {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await apiRequest<ConceptMapResult>("/concept-map", {
+        method: "POST",
+        body: JSON.stringify({ workspace }),
+      });
+      setConceptMap(result);
+      setMessage(t.conceptMapReady);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedBuildConceptMap);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveConceptMap() {
+    if (!conceptMap) return;
+    setBusy(true);
+    setError("");
+    try {
+      await apiRequest("/concept-map/save", {
+        method: "POST",
+        body: JSON.stringify({
+          workspace,
+          result: conceptMap,
+        }),
+      });
+      setMessage(t.conceptMapSaved);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedSaveConceptMap);
     } finally {
       setBusy(false);
     }
@@ -2239,6 +2317,9 @@ function App() {
             <button type="button" onClick={() => void buildEvidenceTable()} disabled={busy}>
               {t.buildEvidenceTable}
             </button>
+            <button type="button" onClick={() => void buildConceptMap()} disabled={busy}>
+              {t.buildConceptMap}
+            </button>
 
             {bookArgumentMap && (
               <section className="feynman-result">
@@ -2305,6 +2386,37 @@ function App() {
 
                 <button type="button" onClick={() => void saveEvidenceTable()} disabled={busy}>
                   {t.saveEvidenceTable}
+                </button>
+              </section>
+            )}
+
+            {conceptMap && (
+              <section className="feynman-result">
+                <h3>{t.conceptMap}</h3>
+                <p>
+                  {conceptMap.node_count} {t.nodes} · {conceptMap.link_count} {t.links}
+                </p>
+
+                <h3>{t.nodes}</h3>
+                <ul>
+                  {conceptMap.nodes.map((node) => (
+                    <li key={node.id}>
+                      {node.label} ({node.type}, {node.mastery_score}%)
+                    </li>
+                  ))}
+                </ul>
+
+                <h3>{t.links}</h3>
+                <ul>
+                  {conceptMap.links.map((link) => (
+                    <li key={`${link.source}-${link.relation}-${link.target}`}>
+                      {link.source} - {link.relation} - {link.target}: {link.evidence}
+                    </li>
+                  ))}
+                </ul>
+
+                <button type="button" onClick={() => void saveConceptMap()} disabled={busy}>
+                  {t.saveConceptMap}
                 </button>
               </section>
             )}
