@@ -17,6 +17,7 @@ from .service import (
     add_note,
     add_quote,
     add_review_card,
+    add_weak_concept,
     build_book_argument_map,
     check_feynman_summary,
     explain_selection,
@@ -120,6 +121,13 @@ class EvidenceCardRequest(BaseModel):
     confidence: str = Field(pattern="^(High|Medium|Low)$")
     not_explicit: str = "TBD"
     inference: str = "TBD"
+
+
+class WeakConceptRequest(BaseModel):
+    workspace: Path
+    chapter_id: str
+    concept: str
+    note: str = ""
 
 
 class ObsidianExportRequest(BaseModel):
@@ -262,6 +270,16 @@ def evidence_cards(request: EvidenceCardRequest) -> dict[str, str]:
         request.confidence,
         request.not_explicit,
         request.inference,
+    )
+
+
+@app.post("/weak-concepts")
+def weak_concepts(request: WeakConceptRequest) -> dict[str, object]:
+    return add_weak_concept(
+        request.workspace,
+        request.concept,
+        request.chapter_id,
+        request.note,
     )
 
 

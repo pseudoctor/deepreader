@@ -47,9 +47,17 @@ type LearningLoopChapter = ChapterSummary & {
   weak_reasons: string[];
 };
 
+type WeakConcept = {
+  concept: string;
+  chapter_id: string;
+  title: string;
+  note: string;
+};
+
 type LearningLoop = {
   chapters: LearningLoopChapter[];
   weak_chapters: LearningLoopChapter[];
+  weak_concepts: WeakConcept[];
   review_ready: LearningLoopChapter[];
   synthesis_due: boolean;
   completed_count: number;
@@ -227,9 +235,16 @@ const translations = {
     learningLoop: "Learning loop",
     averageMastery: "Average mastery",
     weakChapters: "Weak chapters",
+    weakConcepts: "Weak concepts",
+    weakConcept: "Weak concept",
+    weakConceptPlaceholder: "Concept or mechanism you keep missing",
+    weakConceptNote: "Why it is weak",
+    weakConceptNotePlaceholder: "What still feels unclear?",
+    addWeakConcept: "Add weak concept",
     reviewReady: "Review ready",
     synthesisDue: "Three-chapter synthesis due",
     noWeakChapters: "No weak chapters yet",
+    noWeakConcepts: "No weak concepts yet",
     masteryScore: "Mastery",
     export: "Export",
     obsidianFolder: "Obsidian folder",
@@ -333,6 +348,7 @@ const translations = {
     bookMapSaved: "Book map saved",
     activeRecallReady: "Active recall ready",
     activeRecallSaved: "Active recall saved",
+    weakConceptSaved: "Weak concept saved",
     quoteSaved: "Quote saved",
     obsidianExported: "Exported {count} Markdown files to {folder}",
     failedLoadWorkspace: "Failed to load workspace",
@@ -358,6 +374,7 @@ const translations = {
     failedSaveRecall: "Failed to save active recall",
     failedSaveQuote: "Failed to save quote",
     failedObsidianExport: "Failed to export to Obsidian",
+    failedAddWeakConcept: "Failed to add weak concept",
     requestFailed: "Request failed",
     marked: "marked",
     stateLabels: {
@@ -417,9 +434,16 @@ const translations = {
     learningLoop: "学习循环",
     averageMastery: "平均掌握度",
     weakChapters: "薄弱章节",
+    weakConcepts: "薄弱概念",
+    weakConcept: "薄弱概念",
+    weakConceptPlaceholder: "反复没掌握的概念或机制",
+    weakConceptNote: "薄弱原因",
+    weakConceptNotePlaceholder: "哪里还不清楚？",
+    addWeakConcept: "添加薄弱概念",
     reviewReady: "可复习章节",
     synthesisDue: "建议做三章综合",
     noWeakChapters: "暂无薄弱章节",
+    noWeakConcepts: "暂无薄弱概念",
     masteryScore: "掌握度",
     export: "导出",
     obsidianFolder: "Obsidian 文件夹",
@@ -523,6 +547,7 @@ const translations = {
     bookMapSaved: "全书论证地图已保存",
     activeRecallReady: "主动回忆题已生成",
     activeRecallSaved: "主动回忆卡已保存",
+    weakConceptSaved: "薄弱概念已保存",
     quoteSaved: "摘录已保存",
     obsidianExported: "已导出 {count} 个 Markdown 文件到 {folder}",
     failedLoadWorkspace: "载入工作区失败",
@@ -548,6 +573,7 @@ const translations = {
     failedSaveRecall: "保存主动回忆卡失败",
     failedSaveQuote: "保存摘录失败",
     failedObsidianExport: "导出到 Obsidian 失败",
+    failedAddWeakConcept: "添加薄弱概念失败",
     requestFailed: "请求失败",
     marked: "标记为",
     stateLabels: {
@@ -696,6 +722,9 @@ function App() {
   const [obsidianFolder, setObsidianFolder] = useState(getInitialObsidianFolder);
   const [recentWorkspaces, setRecentWorkspaces] = useState<string[]>(getInitialRecentWorkspaces);
   const [llmProviders, setLlmProviders] = useState<LLMProviderList | null>(null);
+  const [weakConcept, setWeakConcept] = useState("");
+  const [weakConceptNote, setWeakConceptNote] = useState("");
+  const [weakConceptChapterId, setWeakConceptChapterId] = useState("");
   const [sourcePath, setSourcePath] = useState("");
   const [workspaceTarget, setWorkspaceTarget] = useState("");
   const [busy, setBusy] = useState(false);
@@ -749,6 +778,7 @@ function App() {
       if (chapterResult.chapters.length > 0) {
         setSynthesisStartChapterId(chapterResult.chapters[0].id);
         setRecallChapterId(chapterResult.chapters[0].id);
+        setWeakConceptChapterId((current) => current || chapterResult.chapters[0].id);
         await loadChapter(chapterResult.chapters[0].id, nextWorkspace);
       }
       setRecentWorkspaces((current) => [
@@ -785,6 +815,35 @@ function App() {
       setMessage(t.providerSettingsSaved);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedUpdateProvider);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addWeakConcept(event: FormEvent) {
+    event.preventDefault();
+    if (!weakConcept.trim() || !weakConceptChapterId) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await apiRequest("/weak-concepts", {
+        method: "POST",
+        body: JSON.stringify({
+          workspace,
+          chapter_id: weakConceptChapterId,
+          concept: weakConcept.trim(),
+          note: weakConceptNote.trim(),
+        }),
+      });
+      const query = new URLSearchParams({ workspace });
+      const result = await apiRequest<LearningLoop>(`/learning-loop?${query.toString()}`);
+      setStatus((current) => (current ? { ...current, learning_loop: result } : current));
+      setWeakConcept("");
+      setWeakConceptNote("");
+      setMessage(t.weakConceptSaved);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedAddWeakConcept);
     } finally {
       setBusy(false);
     }
@@ -884,6 +943,7 @@ function App() {
       const chapter = await apiRequest<ChapterText>(`/chapter-text?${query.toString()}`);
       setActiveChapter(chapter);
       setEvidenceLocator(`${chapter.id}: ${chapter.title}`);
+      setWeakConceptChapterId(chapter.id);
       setFeynmanResult(null);
       setSelectedText("");
       setSelectionToolbarPosition(null);
@@ -1535,6 +1595,61 @@ function App() {
                 ))
               )}
             </div>
+
+            <div className="weak-concept-list">
+              <strong>{t.weakConcepts}</strong>
+              {status.learning_loop.weak_concepts.length === 0 ? (
+                <span className="muted">{t.noWeakConcepts}</span>
+              ) : (
+                status.learning_loop.weak_concepts.slice(0, 3).map((item) => (
+                  <button
+                    key={`${item.chapter_id}-${item.concept}`}
+                    type="button"
+                    onClick={() => void loadChapter(item.chapter_id)}
+                    disabled={busy}
+                    title={item.note}
+                  >
+                    <span>{item.concept}</span>
+                    <em>
+                      {item.chapter_id}: {item.title}
+                    </em>
+                  </button>
+                ))
+              )}
+            </div>
+
+            <form className="weak-concept-form" onSubmit={addWeakConcept}>
+              <label htmlFor="weak-concept">{t.weakConcept}</label>
+              <input
+                id="weak-concept"
+                value={weakConcept}
+                onChange={(event) => setWeakConcept(event.target.value)}
+                placeholder={t.weakConceptPlaceholder}
+              />
+              <label htmlFor="weak-concept-chapter">{t.chapter}</label>
+              <select
+                id="weak-concept-chapter"
+                value={weakConceptChapterId}
+                onChange={(event) => setWeakConceptChapterId(event.target.value)}
+              >
+                {chapters.map((chapter) => (
+                  <option key={chapter.id} value={chapter.id}>
+                    {chapter.id}: {chapter.title}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="weak-concept-note">{t.weakConceptNote}</label>
+              <textarea
+                id="weak-concept-note"
+                className="mini"
+                value={weakConceptNote}
+                onChange={(event) => setWeakConceptNote(event.target.value)}
+                placeholder={t.weakConceptNotePlaceholder}
+              />
+              <button type="submit" disabled={busy || !weakConcept.trim() || !weakConceptChapterId}>
+                {t.addWeakConcept}
+              </button>
+            </form>
           </section>
         )}
 

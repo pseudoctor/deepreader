@@ -9,6 +9,7 @@ from deep_reading.service import (
     add_note,
     add_quote,
     add_review_card,
+    add_weak_concept,
     build_book_argument_map,
     check_feynman_summary,
     explain_selection,
@@ -128,6 +129,34 @@ def test_get_status_tracks_weak_chapters(tmp_path: Path) -> None:
     assert learning_loop["weak_chapters"][0]["id"] == "ch02"
     assert "Marked weak" in learning_loop["weak_chapters"][0]["weak_reasons"]
     assert learning_loop["review_ready"][0]["id"] == "ch02"
+
+
+def test_add_weak_concept_updates_learning_loop(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    result = add_weak_concept(
+        workspace,
+        "causal chain",
+        "ch01",
+        "I can name the claim but not the mechanism.",
+    )
+    duplicate = add_weak_concept(workspace, "causal chain", "ch01", "Updated note.")
+    status = get_status(workspace)
+    weak_concepts = status["learning_loop"]["weak_concepts"]
+
+    assert result["kind"] == "weak_concept"
+    assert duplicate["note"] == "Updated note."
+    assert len(weak_concepts) == 1
+    assert weak_concepts[0]["concept"] == "causal chain"
+    assert weak_concepts[0]["chapter_id"] == "ch01"
+    assert (workspace / "learning_loop.json").exists()
+
+
+def test_add_weak_concept_rejects_empty_concept(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    with pytest.raises(ExtractionError, match="Weak concept cannot be empty"):
+        add_weak_concept(workspace, " ", "ch01")
 
 
 def test_read_chapter_returns_structured_text(tmp_path: Path) -> None:

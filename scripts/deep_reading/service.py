@@ -15,6 +15,7 @@ from .workspace import write
 
 ALLOWED_STATES = {"not-started", "reading", "done", "review", "weak"}
 ALLOWED_NOTE_TYPES = {"Quote", "My Thought", "AI Explanation", "Question"}
+LEARNING_LOOP_FILE = "learning_loop.json"
 
 
 def chapter_summary(chapter: dict[str, object], state_value: str) -> dict[str, object]:
@@ -73,6 +74,58 @@ def get_status(workspace: Path) -> dict[str, object]:
 
 def read_text_if_exists(path: Path) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def load_learning_loop_state(workspace: Path) -> dict[str, object]:
+    path = workspace / LEARNING_LOOP_FILE
+    if not path.exists():
+        return {"weak_concepts": []}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ExtractionError(f"Invalid {LEARNING_LOOP_FILE}")
+    weak_concepts = data.get("weak_concepts", [])
+    if not isinstance(weak_concepts, list):
+        raise ExtractionError(f"Invalid weak_concepts in {LEARNING_LOOP_FILE}")
+    return {"weak_concepts": weak_concepts}
+
+
+def save_learning_loop_state(workspace: Path, data: dict[str, object]) -> None:
+    ensure_workspace(workspace)
+    write(workspace / LEARNING_LOOP_FILE, json.dumps(data, indent=2, ensure_ascii=False))
+
+
+def add_weak_concept(
+    workspace: Path,
+    concept: str,
+    chapter_id: str,
+    note: str = "",
+) -> dict[str, object]:
+    stripped_concept = concept.strip()
+    stripped_note = note.strip()
+    if not stripped_concept:
+        raise ExtractionError("Weak concept cannot be empty")
+
+    chapter = get_chapter(workspace, chapter_id)
+    data = load_learning_loop_state(workspace)
+    weak_concepts = list(data.get("weak_concepts", []))
+    next_item = {
+        "concept": stripped_concept,
+        "chapter_id": chapter["id"],
+        "title": chapter["title"],
+        "note": stripped_note,
+    }
+    weak_concepts = [
+        item
+        for item in weak_concepts
+        if not (
+            isinstance(item, dict)
+            and item.get("concept") == stripped_concept
+            and item.get("chapter_id") == chapter["id"]
+        )
+    ]
+    weak_concepts.insert(0, next_item)
+    save_learning_loop_state(workspace, {"weak_concepts": weak_concepts})
+    return {"kind": "weak_concept", **next_item}
 
 
 def chapter_has_notes(workspace: Path, chapter_id: str) -> bool:
@@ -165,9 +218,11 @@ def build_learning_loop(
     weak_chapters.sort(key=lambda chapter: int(chapter["mastery_score"]))
     review_ready = [chapter for chapter in chapters if chapter["state"] in {"done", "weak"}]
     completed_count = sum(1 for chapter in chapters if chapter["state"] in {"done", "review"})
+    loop_state = load_learning_loop_state(workspace)
     return {
         "chapters": chapters,
         "weak_chapters": weak_chapters,
+        "weak_concepts": loop_state["weak_concepts"],
         "review_ready": review_ready,
         "synthesis_due": completed_count >= 3 and completed_count % 3 == 0,
         "completed_count": completed_count,

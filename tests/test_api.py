@@ -181,6 +181,40 @@ def test_learning_loop_endpoint_returns_mastery_status(tmp_path: Path) -> None:
     assert data["review_ready"][0]["id"] == "ch01"
 
 
+def test_weak_concepts_endpoint_updates_learning_loop(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/weak-concepts",
+        json={
+            "workspace": str(workspace),
+            "chapter_id": "ch01",
+            "concept": "causal chain",
+            "note": "Needs a better mechanism.",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["kind"] == "weak_concept"
+    loop = client.get("/learning-loop", params={"workspace": str(workspace)}).json()
+    assert loop["weak_concepts"][0]["concept"] == "causal chain"
+    assert loop["weak_concepts"][0]["chapter_id"] == "ch01"
+
+
+def test_weak_concepts_endpoint_rejects_empty_concept(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/weak-concepts",
+        json={"workspace": str(workspace), "chapter_id": "ch01", "concept": " "},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "Weak concept cannot be empty"
+
+
 def test_state_endpoint_returns_error_for_invalid_state(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     client = TestClient(app)
