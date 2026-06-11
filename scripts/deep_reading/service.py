@@ -416,6 +416,88 @@ def build_book_argument_map(workspace: Path) -> dict[str, object]:
     }
 
 
+def extract_evidence_lines(workspace: Path, limit: int = 5) -> list[str]:
+    content = read_text_if_exists(workspace / "evidence_cards.md")
+    lines = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("**Claim**") or stripped.startswith("**Support**"):
+            lines.append(stripped.replace("**", ""))
+        if len(lines) >= limit:
+            break
+    return lines
+
+
+def build_one_page_book_account(workspace: Path) -> dict[str, object]:
+    metadata = load_metadata(workspace)
+    state = load_state(workspace)
+    learning_loop = build_learning_loop(workspace, metadata, state)
+    chapters = learning_loop["chapters"]
+    assert isinstance(chapters, list)
+    if not chapters:
+        raise ExtractionError("No chapters available for one-page account")
+
+    chapter_labels = [
+        f"{chapter['id']}: {chapter['title']} ({chapter['state']}, {chapter['mastery_score']}%)"
+        for chapter in chapters
+    ]
+    weak_concepts = learning_loop["weak_concepts"]
+    assert isinstance(weak_concepts, list)
+    weak_points = [
+        f"{item.get('concept')} in {item.get('chapter_id')}: {item.get('note')}".strip()
+        for item in weak_concepts
+        if isinstance(item, dict)
+    ]
+    weak_chapters = learning_loop["weak_chapters"]
+    assert isinstance(weak_chapters, list)
+    weak_points.extend(
+        f"{chapter['id']}: {chapter['title']} needs review because "
+        + "; ".join(str(reason) for reason in chapter.get("weak_reasons", []))
+        for chapter in weak_chapters
+        if isinstance(chapter, dict)
+    )
+
+    title = str(metadata.get("title") or workspace.name)
+    evidence = extract_evidence_lines(workspace)
+    return {
+        "title": title,
+        "chapter_count": len(chapters),
+        "completed_count": learning_loop["completed_count"],
+        "average_mastery": learning_loop["average_mastery"],
+        "core_account": (
+            f"{title} currently has {len(chapters)} detected chapters. The grounded account "
+            "should explain the central problem by moving from the opening chapters through "
+            "the strongest completed or reviewed chapters, while separating direct evidence "
+            "from the reader's inference."
+        ),
+        "core_argument_chain": [
+            "Opening frame: " + str(chapter_labels[0]),
+            (
+                "Development: compare how later chapters add mechanisms, evidence, "
+                "exceptions, or scope."
+            ),
+            "Current endpoint: " + str(chapter_labels[-1]),
+        ],
+        "strongest_evidence": evidence
+        or [
+            (
+                "No evidence cards have been saved yet; add evidence cards before treating "
+                "this account as grounded."
+            )
+        ],
+        "weak_points": weak_points
+        or ["No weak concepts or weak chapters have been recorded yet."],
+        "application_prompts": [
+            "What decision, project, or research question does this book change?",
+            (
+                "Which claim is directly supported by evidence, and which part is still "
+                "your inference?"
+            ),
+            "What would you test or look up next before applying the book's argument?",
+        ],
+    }
+
+
 def format_book_argument_map(result: dict[str, object]) -> str:
     def list_items(items: list[object]) -> str:
         return "\n".join(f"- {item}" for item in items)
@@ -448,6 +530,43 @@ def format_book_argument_map(result: dict[str, object]) -> str:
             list_items(list(result["rebuttals_and_limits"])),
         ]
     )
+
+
+def format_one_page_book_account(result: dict[str, object]) -> str:
+    def list_items(items: list[object]) -> str:
+        return "\n".join(f"- {item}" for item in items)
+
+    return "\n".join(
+        [
+            "# One-Page Book Account",
+            "",
+            f"**Book** {result['title']}",
+            f"**Chapters** {result['completed_count']} / {result['chapter_count']} completed",
+            f"**Average Mastery** {result['average_mastery']}%",
+            "",
+            "## Core Account",
+            str(result["core_account"]),
+            "",
+            "## Core Argument Chain",
+            list_items(list(result["core_argument_chain"])),
+            "",
+            "## Strongest Evidence",
+            list_items(list(result["strongest_evidence"])),
+            "",
+            "## Weak Points",
+            list_items(list(result["weak_points"])),
+            "",
+            "## Application Prompts",
+            list_items(list(result["application_prompts"])),
+        ]
+    )
+
+
+def save_one_page_book_account(workspace: Path, result: dict[str, object]) -> dict[str, str]:
+    ensure_workspace(workspace)
+    path = workspace / "one_page_account.md"
+    write(path, format_one_page_book_account(result) + "\n")
+    return {"kind": "one_page_book_account", "path": str(path)}
 
 
 def save_book_argument_map(workspace: Path, result: dict[str, object]) -> dict[str, str]:

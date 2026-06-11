@@ -412,6 +412,49 @@ def test_save_book_argument_map_endpoint_appends_map(tmp_path: Path) -> None:
     assert "## Whole-Book Argument Map" in content
 
 
+def test_one_page_book_account_endpoint_returns_grounded_summary(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+    client.post(
+        "/state",
+        json={"workspace": str(workspace), "chapter_id": "ch01", "state": "done"},
+    )
+    client.post(
+        "/weak-concepts",
+        json={
+            "workspace": str(workspace),
+            "chapter_id": "ch01",
+            "concept": "causal chain",
+        },
+    )
+
+    response = client.post("/one-page-book-account", json={"workspace": str(workspace)})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["chapter_count"] == 2
+    assert data["completed_count"] == 1
+    assert data["core_argument_chain"]
+    assert any("causal chain" in item for item in data["weak_points"])
+
+
+def test_save_one_page_book_account_endpoint_writes_markdown(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+    result = client.post("/one-page-book-account", json={"workspace": str(workspace)}).json()
+
+    response = client.post(
+        "/one-page-book-account/save",
+        json={"workspace": str(workspace), "result": result},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["kind"] == "one_page_book_account"
+    content = Path(data["path"]).read_text(encoding="utf-8")
+    assert "# One-Page Book Account" in content
+
+
 def test_active_recall_endpoint_returns_chapter_questions(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     client = TestClient(app)

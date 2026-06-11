@@ -126,6 +126,18 @@ type BookArgumentMapResult = {
   rebuttals_and_limits: string[];
 };
 
+type OnePageBookAccountResult = {
+  title: string;
+  chapter_count: number;
+  completed_count: number;
+  average_mastery: number;
+  core_account: string;
+  core_argument_chain: string[];
+  strongest_evidence: string[];
+  weak_points: string[];
+  application_prompts: string[];
+};
+
 type ActiveRecallQuestion = {
   question: string;
   answer_hint: string;
@@ -297,6 +309,12 @@ const translations = {
     openQuestions: "Open questions",
     buildBookMap: "Build book map",
     saveBookMap: "Save book map",
+    buildOnePageAccount: "Build one-page account",
+    saveOnePageAccount: "Save one-page account",
+    onePageAccount: "One-page account",
+    strongestEvidence: "Strongest evidence",
+    weakPoints: "Weak points",
+    applicationPrompts: "Application prompts",
     coreProblem: "Core problem",
     coreAnswer: "Core answer",
     argumentChain: "Argument chain",
@@ -346,6 +364,8 @@ const translations = {
     synthesisSaved: "Synthesis saved",
     bookMapReady: "Book map ready",
     bookMapSaved: "Book map saved",
+    onePageAccountReady: "One-page account ready",
+    onePageAccountSaved: "One-page account saved",
     activeRecallReady: "Active recall ready",
     activeRecallSaved: "Active recall saved",
     weakConceptSaved: "Weak concept saved",
@@ -370,6 +390,8 @@ const translations = {
     failedSaveSynthesis: "Failed to save synthesis",
     failedBuildBookMap: "Failed to build book map",
     failedSaveBookMap: "Failed to save book map",
+    failedBuildOnePageAccount: "Failed to build one-page account",
+    failedSaveOnePageAccount: "Failed to save one-page account",
     failedGenerateRecall: "Failed to generate active recall",
     failedSaveRecall: "Failed to save active recall",
     failedSaveQuote: "Failed to save quote",
@@ -496,6 +518,12 @@ const translations = {
     openQuestions: "冲突或未解释处",
     buildBookMap: "生成全书地图",
     saveBookMap: "保存全书地图",
+    buildOnePageAccount: "生成一页书账",
+    saveOnePageAccount: "保存一页书账",
+    onePageAccount: "一页书账",
+    strongestEvidence: "最强证据",
+    weakPoints: "薄弱点",
+    applicationPrompts: "应用提示",
     coreProblem: "核心问题",
     coreAnswer: "核心答案",
     argumentChain: "论证链",
@@ -545,6 +573,8 @@ const translations = {
     synthesisSaved: "跨章节综合已保存",
     bookMapReady: "全书论证地图已生成",
     bookMapSaved: "全书论证地图已保存",
+    onePageAccountReady: "一页书账已生成",
+    onePageAccountSaved: "一页书账已保存",
     activeRecallReady: "主动回忆题已生成",
     activeRecallSaved: "主动回忆卡已保存",
     weakConceptSaved: "薄弱概念已保存",
@@ -569,6 +599,8 @@ const translations = {
     failedSaveSynthesis: "保存跨章节综合失败",
     failedBuildBookMap: "生成全书论证地图失败",
     failedSaveBookMap: "保存全书论证地图失败",
+    failedBuildOnePageAccount: "生成一页书账失败",
+    failedSaveOnePageAccount: "保存一页书账失败",
     failedGenerateRecall: "生成主动回忆题失败",
     failedSaveRecall: "保存主动回忆卡失败",
     failedSaveQuote: "保存摘录失败",
@@ -710,6 +742,8 @@ function App() {
   const [synthesisCount, setSynthesisCount] = useState(3);
   const [synthesisResult, setSynthesisResult] = useState<ChapterSynthesisResult | null>(null);
   const [bookArgumentMap, setBookArgumentMap] = useState<BookArgumentMapResult | null>(null);
+  const [onePageBookAccount, setOnePageBookAccount] =
+    useState<OnePageBookAccountResult | null>(null);
   const [evidenceClaim, setEvidenceClaim] = useState("");
   const [evidenceLocator, setEvidenceLocator] = useState("");
   const [evidenceSupport, setEvidenceSupport] = useState("");
@@ -1315,6 +1349,43 @@ function App() {
       setMessage(t.bookMapSaved);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedSaveBookMap);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function buildOnePageBookAccount() {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await apiRequest<OnePageBookAccountResult>("/one-page-book-account", {
+        method: "POST",
+        body: JSON.stringify({ workspace }),
+      });
+      setOnePageBookAccount(result);
+      setMessage(t.onePageAccountReady);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedBuildOnePageAccount);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveOnePageBookAccount() {
+    if (!onePageBookAccount) return;
+    setBusy(true);
+    setError("");
+    try {
+      await apiRequest("/one-page-book-account/save", {
+        method: "POST",
+        body: JSON.stringify({
+          workspace,
+          result: onePageBookAccount,
+        }),
+      });
+      setMessage(t.onePageAccountSaved);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedSaveOnePageAccount);
     } finally {
       setBusy(false);
     }
@@ -2086,6 +2157,13 @@ function App() {
             <button type="button" onClick={() => void buildBookMap()} disabled={busy}>
               {t.buildBookMap}
             </button>
+            <button
+              type="button"
+              onClick={() => void buildOnePageBookAccount()}
+              disabled={busy}
+            >
+              {t.buildOnePageAccount}
+            </button>
 
             {bookArgumentMap && (
               <section className="feynman-result">
@@ -2118,6 +2196,55 @@ function App() {
 
                 <button type="button" onClick={() => void saveBookMap()} disabled={busy}>
                   {t.saveBookMap}
+                </button>
+              </section>
+            )}
+
+            {onePageBookAccount && (
+              <section className="feynman-result">
+                <h3>{t.onePageAccount}</h3>
+                <p>
+                  {onePageBookAccount.title} · {onePageBookAccount.completed_count}/
+                  {onePageBookAccount.chapter_count} · {onePageBookAccount.average_mastery}%
+                </p>
+
+                <h3>{t.coreAnswer}</h3>
+                <p>{onePageBookAccount.core_account}</p>
+
+                <h3>{t.argumentChain}</h3>
+                <ul>
+                  {onePageBookAccount.core_argument_chain.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+
+                <h3>{t.strongestEvidence}</h3>
+                <ul>
+                  {onePageBookAccount.strongest_evidence.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+
+                <h3>{t.weakPoints}</h3>
+                <ul>
+                  {onePageBookAccount.weak_points.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+
+                <h3>{t.applicationPrompts}</h3>
+                <ul>
+                  {onePageBookAccount.application_prompts.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+
+                <button
+                  type="button"
+                  onClick={() => void saveOnePageBookAccount()}
+                  disabled={busy}
+                >
+                  {t.saveOnePageAccount}
                 </button>
               </section>
             )}

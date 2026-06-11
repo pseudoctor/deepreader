@@ -19,6 +19,7 @@ from .service import (
     add_review_card,
     add_weak_concept,
     build_book_argument_map,
+    build_one_page_book_account,
     check_feynman_summary,
     explain_selection,
     export_obsidian,
@@ -29,6 +30,7 @@ from .service import (
     read_chapter,
     save_active_recall_cards,
     save_book_argument_map,
+    save_one_page_book_account,
     synthesize_chapter_window,
     update_reading_state,
 )
@@ -93,6 +95,11 @@ class BookArgumentMapRequest(BaseModel):
 
 
 class SaveBookArgumentMapRequest(BaseModel):
+    workspace: Path
+    result: dict[str, object]
+
+
+class SaveOnePageBookAccountRequest(BaseModel):
     workspace: Path
     result: dict[str, object]
 
@@ -243,6 +250,16 @@ def book_argument_map(request: BookArgumentMapRequest) -> dict[str, object]:
 @app.post("/book-argument-map/save")
 def save_argument_map(request: SaveBookArgumentMapRequest) -> dict[str, str]:
     return save_book_argument_map(request.workspace, request.result)
+
+
+@app.post("/one-page-book-account")
+def one_page_book_account(request: BookArgumentMapRequest) -> dict[str, object]:
+    return build_one_page_book_account(request.workspace)
+
+
+@app.post("/one-page-book-account/save")
+def save_book_account(request: SaveOnePageBookAccountRequest) -> dict[str, str]:
+    return save_one_page_book_account(request.workspace, request.result)
 
 
 @app.post("/active-recall")

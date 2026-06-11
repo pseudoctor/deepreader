@@ -11,6 +11,7 @@ from deep_reading.service import (
     add_review_card,
     add_weak_concept,
     build_book_argument_map,
+    build_one_page_book_account,
     check_feynman_summary,
     explain_selection,
     export_obsidian,
@@ -21,6 +22,7 @@ from deep_reading.service import (
     read_chapter,
     save_active_recall_cards,
     save_book_argument_map,
+    save_one_page_book_account,
     synthesize_chapter_window,
     update_reading_state,
 )
@@ -220,6 +222,42 @@ def test_save_book_argument_map_appends_to_argument_maps(tmp_path: Path) -> None
     assert "## Whole-Book Argument Map" in content
     assert "### Core Problem" in content
     assert "ch01: Intro" in content
+
+
+def test_build_one_page_book_account_uses_learning_loop_inputs(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    update_reading_state(workspace, "ch01", "done")
+    add_evidence_card(
+        workspace,
+        "The chapter frames comparison.",
+        "ch01: Intro",
+        "A source detail supports it.",
+        "Medium",
+    )
+    add_weak_concept(workspace, "causal chain", "ch01", "Mechanism is still fuzzy.")
+
+    result = build_one_page_book_account(workspace)
+
+    assert result["chapter_count"] == 2
+    assert result["completed_count"] == 1
+    assert "workspace" in str(result["title"])
+    assert "central problem" in str(result["core_account"])
+    assert "Claim The chapter frames comparison." in result["strongest_evidence"]
+    assert any("causal chain" in item for item in result["weak_points"])
+    assert result["application_prompts"]
+
+
+def test_save_one_page_book_account_writes_markdown(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    result = build_one_page_book_account(workspace)
+
+    saved = save_one_page_book_account(workspace, result)
+
+    assert saved["kind"] == "one_page_book_account"
+    content = Path(saved["path"]).read_text(encoding="utf-8")
+    assert "# One-Page Book Account" in content
+    assert "## Core Argument Chain" in content
+    assert "## Application Prompts" in content
 
 
 def test_generate_active_recall_returns_chapter_questions(tmp_path: Path) -> None:
