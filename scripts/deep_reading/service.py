@@ -13,7 +13,7 @@ from .reader import get_chapter, get_chapter_text, load_metadata
 from .state import load_state
 from .workspace import write
 
-ALLOWED_STATES = {"not-started", "reading", "done", "review"}
+ALLOWED_STATES = {"not-started", "reading", "done", "review", "weak"}
 ALLOWED_NOTE_TYPES = {"Quote", "My Thought", "AI Explanation", "Question"}
 
 
@@ -66,7 +66,116 @@ def get_status(workspace: Path) -> dict[str, object]:
         "current": state.get("current"),
         "progress": counts,
         "continue_reading": build_continue_reading(metadata, state),
+        "learning_loop": build_learning_loop(workspace, metadata, state),
         "artifacts": {artifact: (workspace / artifact).exists() for artifact in artifacts},
+    }
+
+
+def read_text_if_exists(path: Path) -> str:
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def chapter_has_notes(workspace: Path, chapter_id: str) -> bool:
+    try:
+        content = chapter_note_path(workspace, chapter_id).read_text(encoding="utf-8")
+    except ExtractionError:
+        return False
+    return "\n### " in content or "\n## Quote\n" in content
+
+
+def chapter_has_active_recall(workspace: Path, chapter_id: str) -> bool:
+    content = read_text_if_exists(workspace / "review_cards.md")
+    return f"**Chapter** {chapter_id}:" in content
+
+
+def chapter_has_evidence(workspace: Path, chapter_id: str) -> bool:
+    content = read_text_if_exists(workspace / "evidence_cards.md")
+    return chapter_id in content
+
+
+def chapter_mastery(
+    workspace: Path,
+    chapter: dict[str, object],
+    state_value: str,
+) -> dict[str, object]:
+    chapter_id = str(chapter["id"])
+    has_notes = chapter_has_notes(workspace, chapter_id)
+    has_recall = chapter_has_active_recall(workspace, chapter_id)
+    has_evidence = chapter_has_evidence(workspace, chapter_id)
+    state_scores = {
+        "not-started": 0,
+        "reading": 20,
+        "weak": 30,
+        "done": 50,
+        "review": 70,
+    }
+    score = state_scores.get(state_value, 0)
+    if has_notes:
+        score += 10
+    if has_recall:
+        score += 12
+    if has_evidence:
+        score += 8
+    score = min(score, 100)
+
+    reasons = []
+    if state_value == "weak":
+        reasons.append("Marked weak")
+    if state_value == "done" and not has_recall:
+        reasons.append("Done but active recall not saved")
+    if state_value in {"done", "review", "weak"} and not has_notes:
+        reasons.append("No chapter note activity")
+    if state_value in {"done", "review", "weak"} and not has_evidence:
+        reasons.append("No evidence card linked")
+    if score < 60 and state_value != "not-started":
+        reasons.append("Mastery score below 60")
+
+    return {
+        "id": chapter_id,
+        "title": chapter["title"],
+        "state": state_value,
+        "mastery_score": score,
+        "has_notes": has_notes,
+        "has_active_recall": has_recall,
+        "has_evidence": has_evidence,
+        "weak_reasons": reasons,
+    }
+
+
+def build_learning_loop(
+    workspace: Path,
+    metadata: dict[str, object],
+    state: dict[str, object],
+) -> dict[str, object]:
+    chapter_states = state.get("chapters", {})
+    chapters = [
+        chapter_mastery(
+            workspace,
+            chapter,
+            str(chapter_states.get(chapter["id"], "not-started")),
+        )
+        for chapter in metadata.get("chapters", [])
+    ]
+    weak_chapters = [
+        chapter
+        for chapter in chapters
+        if chapter["state"] == "weak"
+        or (chapter["state"] in {"done", "review"} and int(chapter["mastery_score"]) < 70)
+    ]
+    weak_chapters.sort(key=lambda chapter: int(chapter["mastery_score"]))
+    review_ready = [chapter for chapter in chapters if chapter["state"] in {"done", "weak"}]
+    completed_count = sum(1 for chapter in chapters if chapter["state"] in {"done", "review"})
+    return {
+        "chapters": chapters,
+        "weak_chapters": weak_chapters,
+        "review_ready": review_ready,
+        "synthesis_due": completed_count >= 3 and completed_count % 3 == 0,
+        "completed_count": completed_count,
+        "average_mastery": (
+            round(sum(int(chapter["mastery_score"]) for chapter in chapters) / len(chapters))
+            if chapters
+            else 0
+        ),
     }
 
 
@@ -88,7 +197,7 @@ def build_continue_reading(
         summary = chapter_summary(chapter, state_value)
         if chapter_id == current_id:
             current_chapter = summary
-        if state_value == "done":
+        if state_value in {"done", "weak"}:
             review_due.append(summary)
         if state_value == "reading" and first_reading is None:
             first_reading = summary

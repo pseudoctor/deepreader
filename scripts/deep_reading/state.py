@@ -65,7 +65,7 @@ def cmd_chapter(workspace: Path, chapter_id: str) -> int:
 
 
 def cmd_mark(workspace: Path, chapter_id: str, state_value: str) -> int:
-    allowed = {"not-started", "reading", "done", "review"}
+    allowed = {"not-started", "reading", "done", "review", "weak"}
     if state_value not in allowed:
         raise ExtractionError(
             f"Invalid state '{state_value}'. Use one of: {', '.join(sorted(allowed))}"

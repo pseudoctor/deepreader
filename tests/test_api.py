@@ -148,6 +148,39 @@ def test_state_endpoint_updates_reading_state(tmp_path: Path) -> None:
     assert chapters[1]["state"] == "reading"
 
 
+def test_state_endpoint_accepts_weak_state(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/state",
+        json={"workspace": str(workspace), "chapter_id": "ch02", "state": "weak"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["state"] == "weak"
+    status = client.get("/status", params={"workspace": str(workspace)}).json()
+    assert status["learning_loop"]["weak_chapters"][0]["id"] == "ch02"
+
+
+def test_learning_loop_endpoint_returns_mastery_status(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+    client.post(
+        "/state",
+        json={"workspace": str(workspace), "chapter_id": "ch01", "state": "done"},
+    )
+
+    response = client.get("/learning-loop", params={"workspace": str(workspace)})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["chapters"][0]["id"] == "ch01"
+    assert data["chapters"][0]["mastery_score"] == 50
+    assert data["weak_chapters"][0]["id"] == "ch01"
+    assert data["review_ready"][0]["id"] == "ch01"
+
+
 def test_state_endpoint_returns_error_for_invalid_state(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     client = TestClient(app)

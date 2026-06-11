@@ -160,6 +160,11 @@ def status(workspace: WorkspaceQuery) -> dict[str, object]:
     return get_status(workspace)
 
 
+@app.get("/learning-loop")
+def learning_loop(workspace: WorkspaceQuery) -> dict[str, object]:
+    return get_status(workspace)["learning_loop"]  # type: ignore[return-value]
+
+
 @app.get("/chapters")
 def chapters(workspace: WorkspaceQuery) -> dict[str, object]:
     return {"chapters": list_chapters(workspace)}

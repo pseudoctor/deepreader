@@ -17,6 +17,7 @@ type Status = {
   current: string | null;
   progress: Record<string, number>;
   continue_reading: ContinueReading;
+  learning_loop: LearningLoop;
   artifacts: Record<string, boolean>;
 };
 
@@ -36,6 +37,23 @@ type ContinueReading = {
   current_chapter: ChapterSummary | null;
   review_due: ChapterSummary[];
   next_action: NextAction;
+};
+
+type LearningLoopChapter = ChapterSummary & {
+  mastery_score: number;
+  has_notes: boolean;
+  has_active_recall: boolean;
+  has_evidence: boolean;
+  weak_reasons: string[];
+};
+
+type LearningLoop = {
+  chapters: LearningLoopChapter[];
+  weak_chapters: LearningLoopChapter[];
+  review_ready: LearningLoopChapter[];
+  synthesis_due: boolean;
+  completed_count: number;
+  average_mastery: number;
 };
 
 type ChapterText = {
@@ -173,7 +191,7 @@ const noteTypeOptions = ["Quote", "My Thought", "AI Explanation", "Question"] as
 
 const confidenceOptions = ["High", "Medium", "Low"] as const;
 
-const stateOptions = ["reading", "done", "review"] as const;
+const stateOptions = ["reading", "done", "review", "weak"] as const;
 
 const translations = {
   en: {
@@ -206,6 +224,13 @@ const translations = {
     recentWorkspaces: "Recent workspaces",
     noRecentWorkspaces: "No recent workspaces yet",
     status: "Status",
+    learningLoop: "Learning loop",
+    averageMastery: "Average mastery",
+    weakChapters: "Weak chapters",
+    reviewReady: "Review ready",
+    synthesisDue: "Three-chapter synthesis due",
+    noWeakChapters: "No weak chapters yet",
+    masteryScore: "Mastery",
     export: "Export",
     obsidianFolder: "Obsidian folder",
     selectObsidianFolder: "Choose folder",
@@ -339,6 +364,7 @@ const translations = {
       reading: "reading",
       done: "done",
       review: "review",
+      weak: "weak",
     },
     noteSectionLabels: {
       Confusions: "Confusions",
@@ -388,6 +414,13 @@ const translations = {
     recentWorkspaces: "最近工作区",
     noRecentWorkspaces: "暂无最近工作区",
     status: "状态",
+    learningLoop: "学习循环",
+    averageMastery: "平均掌握度",
+    weakChapters: "薄弱章节",
+    reviewReady: "可复习章节",
+    synthesisDue: "建议做三章综合",
+    noWeakChapters: "暂无薄弱章节",
+    masteryScore: "掌握度",
     export: "导出",
     obsidianFolder: "Obsidian 文件夹",
     selectObsidianFolder: "选择文件夹",
@@ -521,6 +554,7 @@ const translations = {
       reading: "阅读中",
       done: "已完成",
       review: "复习",
+      weak: "薄弱",
     },
     noteSectionLabels: {
       Confusions: "困惑",
@@ -1461,6 +1495,48 @@ function App() {
           <span>{t.status}</span>
           <strong>{progressText}</strong>
         </div>
+
+        {status && (
+          <section className="learning-loop">
+            <span className="eyebrow">{t.learningLoop}</span>
+            <div className="learning-loop-metrics">
+              <p>
+                <strong>{status.learning_loop.average_mastery}%</strong>
+                <span>{t.averageMastery}</span>
+              </p>
+              <p>
+                <strong>{status.learning_loop.review_ready.length}</strong>
+                <span>{t.reviewReady}</span>
+              </p>
+            </div>
+            {status.learning_loop.synthesis_due && (
+              <p className="success">{t.synthesisDue}</p>
+            )}
+            <div className="weak-chapter-list">
+              <strong>{t.weakChapters}</strong>
+              {status.learning_loop.weak_chapters.length === 0 ? (
+                <span className="muted">{t.noWeakChapters}</span>
+              ) : (
+                status.learning_loop.weak_chapters.slice(0, 3).map((chapter) => (
+                  <button
+                    key={chapter.id}
+                    type="button"
+                    onClick={() => void loadChapter(chapter.id)}
+                    disabled={busy}
+                    title={chapter.weak_reasons.join(" · ")}
+                  >
+                    <span>
+                      {chapter.id}: {chapter.title}
+                    </span>
+                    <em>
+                      {t.masteryScore} {chapter.mastery_score}%
+                    </em>
+                  </button>
+                ))
+              )}
+            </div>
+          </section>
+        )}
 
         {status && (
           <section className="continue-reading">

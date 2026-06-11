@@ -90,6 +90,46 @@ def test_get_status_prefers_done_chapters_for_review(tmp_path: Path) -> None:
     }
 
 
+def test_get_status_includes_learning_loop_mastery(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    update_reading_state(workspace, "ch01", "done")
+    add_note(workspace, "ch01", "Confusions", "This chapter needs a causal chain.")
+    add_evidence_card(
+        workspace,
+        "Claim",
+        "ch01: Intro",
+        "A source detail.",
+        "Medium",
+    )
+    recall = generate_active_recall(workspace, "ch01")
+    save_active_recall_cards(workspace, recall)
+
+    status = get_status(workspace)
+    learning_loop = status["learning_loop"]
+    chapter = learning_loop["chapters"][0]
+
+    assert chapter["id"] == "ch01"
+    assert chapter["mastery_score"] == 80
+    assert chapter["has_notes"] is True
+    assert chapter["has_active_recall"] is True
+    assert chapter["has_evidence"] is True
+    assert learning_loop["weak_chapters"] == []
+    assert learning_loop["average_mastery"] == 40
+
+
+def test_get_status_tracks_weak_chapters(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    update_reading_state(workspace, "ch02", "weak")
+    status = get_status(workspace)
+    learning_loop = status["learning_loop"]
+
+    assert status["progress"]["weak"] == 1
+    assert learning_loop["weak_chapters"][0]["id"] == "ch02"
+    assert "Marked weak" in learning_loop["weak_chapters"][0]["weak_reasons"]
+    assert learning_loop["review_ready"][0]["id"] == "ch02"
+
+
 def test_read_chapter_returns_structured_text(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
 
