@@ -269,6 +269,37 @@ def test_chapter_synthesis_endpoint_returns_cross_chapter_prompts(tmp_path: Path
     assert data["open_questions"]
 
 
+def test_book_argument_map_endpoint_returns_whole_book_structure(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post("/book-argument-map", json={"workspace": str(workspace)})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["chapter_count"] == 2
+    assert [chapter["id"] for chapter in data["chapters"]] == ["ch01", "ch02"]
+    assert data["argument_chain"]
+    assert data["key_evidence"]
+
+
+def test_save_book_argument_map_endpoint_appends_map(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+    result = client.post("/book-argument-map", json={"workspace": str(workspace)}).json()
+
+    response = client.post(
+        "/book-argument-map/save",
+        json={"workspace": str(workspace), "result": result},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["kind"] == "book_argument_map"
+    content = Path(data["path"]).read_text(encoding="utf-8")
+    assert "## Whole-Book Argument Map" in content
+
+
 def test_review_cards_endpoint_appends_card(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     client = TestClient(app)

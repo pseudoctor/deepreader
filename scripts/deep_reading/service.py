@@ -228,6 +228,93 @@ def synthesize_chapter_window(
     }
 
 
+def build_book_argument_map(workspace: Path) -> dict[str, object]:
+    metadata = load_metadata(workspace)
+    state = load_state(workspace)
+    chapters = [
+        chapter_summary(
+            chapter,
+            str(state.get("chapters", {}).get(chapter["id"], "not-started")),
+        )
+        for chapter in metadata.get("chapters", [])
+    ]
+    if not chapters:
+        raise ExtractionError("No chapters available for argument map")
+
+    first = chapters[0]
+    last = chapters[-1]
+    return {
+        "chapter_count": len(chapters),
+        "chapters": chapters,
+        "core_problem": (
+            "What central question makes the whole book necessary? Start from "
+            f"{first['id']}: {first['title']} and track how later chapters constrain the answer."
+        ),
+        "core_answer": (
+            "State the book's main answer in one paragraph, then separate what the author "
+            "claims from what the evidence directly proves."
+        ),
+        "argument_chain": [
+            f"Opening frame: {first['id']}: {first['title']}",
+            (
+                "Middle development: identify the chapters where the author adds mechanisms, "
+                "comparisons, counterexamples, or historical tests."
+            ),
+            f"Final position: {last['id']}: {last['title']}",
+        ],
+        "key_evidence": [
+            "List the strongest concrete examples, comparisons, dates, places, or source passages.",
+            "For each evidence item, name the claim it supports and its confidence level.",
+        ],
+        "rebuttals_and_limits": [
+            "What alternative explanation would challenge the book's main answer?",
+            "Which chapters rely on inference rather than direct evidence?",
+            "What would a skeptical reader still need to verify?",
+        ],
+    }
+
+
+def format_book_argument_map(result: dict[str, object]) -> str:
+    def list_items(items: list[object]) -> str:
+        return "\n".join(f"- {item}" for item in items)
+
+    chapters = result["chapters"]
+    assert isinstance(chapters, list)
+    chapter_lines = [
+        f"- {chapter['id']}: {chapter['title']} ({chapter['state']})" for chapter in chapters
+    ]
+    return "\n".join(
+        [
+            "## Whole-Book Argument Map",
+            "",
+            "### Chapters",
+            "\n".join(chapter_lines),
+            "",
+            "### Core Problem",
+            str(result["core_problem"]),
+            "",
+            "### Core Answer",
+            str(result["core_answer"]),
+            "",
+            "### Argument Chain",
+            list_items(list(result["argument_chain"])),
+            "",
+            "### Key Evidence",
+            list_items(list(result["key_evidence"])),
+            "",
+            "### Rebuttals And Limits",
+            list_items(list(result["rebuttals_and_limits"])),
+        ]
+    )
+
+
+def save_book_argument_map(workspace: Path, result: dict[str, object]) -> dict[str, str]:
+    ensure_workspace(workspace)
+    path = workspace / "argument_maps.md"
+    append_text(path, format_book_argument_map(result))
+    return {"kind": "book_argument_map", "path": str(path)}
+
+
 def read_chapter(workspace: Path, chapter_id: str) -> dict[str, object]:
     chapter = get_chapter(workspace, chapter_id)
     return {

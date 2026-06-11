@@ -9,6 +9,7 @@ from deep_reading.service import (
     add_note,
     add_quote,
     add_review_card,
+    build_book_argument_map,
     check_feynman_summary,
     explain_selection,
     export_obsidian,
@@ -16,6 +17,7 @@ from deep_reading.service import (
     get_status,
     list_chapters,
     read_chapter,
+    save_book_argument_map,
     synthesize_chapter_window,
     update_reading_state,
 )
@@ -120,6 +122,33 @@ def test_synthesize_chapter_window_rejects_invalid_count(tmp_path: Path) -> None
 
     with pytest.raises(ExtractionError, match="Chapter count must be at least 1"):
         synthesize_chapter_window(workspace, "ch01", 0)
+
+
+def test_build_book_argument_map_returns_whole_book_structure(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    result = build_book_argument_map(workspace)
+
+    assert result["chapter_count"] == 2
+    assert [chapter["id"] for chapter in result["chapters"]] == ["ch01", "ch02"]
+    assert "central question" in str(result["core_problem"])
+    assert "main answer" in str(result["core_answer"])
+    assert result["argument_chain"]
+    assert result["key_evidence"]
+    assert result["rebuttals_and_limits"]
+
+
+def test_save_book_argument_map_appends_to_argument_maps(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    result = build_book_argument_map(workspace)
+
+    saved = save_book_argument_map(workspace, result)
+
+    assert saved["kind"] == "book_argument_map"
+    content = Path(saved["path"]).read_text(encoding="utf-8")
+    assert "## Whole-Book Argument Map" in content
+    assert "### Core Problem" in content
+    assert "ch01: Intro" in content
 
 
 def test_check_feynman_summary_returns_structured_feedback(tmp_path: Path) -> None:

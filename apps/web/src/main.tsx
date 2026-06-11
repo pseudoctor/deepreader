@@ -90,6 +90,16 @@ type ChapterSynthesisResult = {
   open_questions: string[];
 };
 
+type BookArgumentMapResult = {
+  chapter_count: number;
+  chapters: ChapterSummary[];
+  core_problem: string;
+  core_answer: string;
+  argument_chain: string[];
+  key_evidence: string[];
+  rebuttals_and_limits: string[];
+};
+
 type SelectionToolbarPosition = {
   left: number;
   top: number;
@@ -171,6 +181,7 @@ const translations = {
     evidence: "Evidence",
     feynman: "Feynman",
     synthesis: "Synthesis",
+    bookMap: "Book Map",
     feynmanSummary: "3-5 sentence summary",
     feynmanSummaryPlaceholder: "Explain the chapter in your own words...",
     checkSummary: "Check summary",
@@ -189,6 +200,13 @@ const translations = {
     recurringConcepts: "Recurring concepts",
     argumentProgression: "Argument progression",
     openQuestions: "Open questions",
+    buildBookMap: "Build book map",
+    saveBookMap: "Save book map",
+    coreProblem: "Core problem",
+    coreAnswer: "Core answer",
+    argumentChain: "Argument chain",
+    keyEvidence: "Key evidence",
+    rebuttalsAndLimits: "Rebuttals and limits",
     selectedText: "Selected text",
     saveQuote: "Save quote",
     makeEvidenceCard: "Make evidence card",
@@ -224,6 +242,8 @@ const translations = {
     reviewQuestionDrafted: "Review question drafted",
     synthesisReady: "Synthesis ready",
     synthesisSaved: "Synthesis saved",
+    bookMapReady: "Book map ready",
+    bookMapSaved: "Book map saved",
     quoteSaved: "Quote saved",
     obsidianExported: "Exported {count} Markdown files to {folder}",
     failedLoadWorkspace: "Failed to load workspace",
@@ -240,6 +260,8 @@ const translations = {
     failedMakeReviewQuestion: "Failed to make review question",
     failedRunSynthesis: "Failed to run synthesis",
     failedSaveSynthesis: "Failed to save synthesis",
+    failedBuildBookMap: "Failed to build book map",
+    failedSaveBookMap: "Failed to save book map",
     failedSaveQuote: "Failed to save quote",
     failedObsidianExport: "Failed to export to Obsidian",
     requestFailed: "Request failed",
@@ -307,6 +329,7 @@ const translations = {
     evidence: "证据卡",
     feynman: "费曼检查",
     synthesis: "综合",
+    bookMap: "全书地图",
     feynmanSummary: "3-5 句总结",
     feynmanSummaryPlaceholder: "用自己的话解释本章...",
     checkSummary: "检查总结",
@@ -325,6 +348,13 @@ const translations = {
     recurringConcepts: "反复出现的概念",
     argumentProgression: "论证推进",
     openQuestions: "冲突或未解释处",
+    buildBookMap: "生成全书地图",
+    saveBookMap: "保存全书地图",
+    coreProblem: "核心问题",
+    coreAnswer: "核心答案",
+    argumentChain: "论证链",
+    keyEvidence: "关键证据",
+    rebuttalsAndLimits: "反驳与限制",
     selectedText: "已选文本",
     saveQuote: "保存摘录",
     makeEvidenceCard: "转为证据卡",
@@ -360,6 +390,8 @@ const translations = {
     reviewQuestionDrafted: "复习题草稿已生成",
     synthesisReady: "跨章节综合已生成",
     synthesisSaved: "跨章节综合已保存",
+    bookMapReady: "全书论证地图已生成",
+    bookMapSaved: "全书论证地图已保存",
     quoteSaved: "摘录已保存",
     obsidianExported: "已导出 {count} 个 Markdown 文件到 {folder}",
     failedLoadWorkspace: "载入工作区失败",
@@ -376,6 +408,8 @@ const translations = {
     failedMakeReviewQuestion: "生成复习题失败",
     failedRunSynthesis: "生成跨章节综合失败",
     failedSaveSynthesis: "保存跨章节综合失败",
+    failedBuildBookMap: "生成全书论证地图失败",
+    failedSaveBookMap: "保存全书论证地图失败",
     failedSaveQuote: "保存摘录失败",
     failedObsidianExport: "导出到 Obsidian 失败",
     requestFailed: "请求失败",
@@ -498,7 +532,7 @@ function App() {
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [activeChapter, setActiveChapter] = useState<ChapterText | null>(null);
   const [activeCapture, setActiveCapture] = useState<
-    "note" | "review" | "evidence" | "feynman" | "synthesis"
+    "note" | "review" | "evidence" | "feynman" | "synthesis" | "bookMap"
   >("note");
   const [noteSection, setNoteSection] = useState("Confusions");
   const [noteType, setNoteType] = useState("My Thought");
@@ -510,6 +544,7 @@ function App() {
   const [synthesisStartChapterId, setSynthesisStartChapterId] = useState("");
   const [synthesisCount, setSynthesisCount] = useState(3);
   const [synthesisResult, setSynthesisResult] = useState<ChapterSynthesisResult | null>(null);
+  const [bookArgumentMap, setBookArgumentMap] = useState<BookArgumentMapResult | null>(null);
   const [evidenceClaim, setEvidenceClaim] = useState("");
   const [evidenceLocator, setEvidenceLocator] = useState("");
   const [evidenceSupport, setEvidenceSupport] = useState("");
@@ -920,6 +955,43 @@ function App() {
     }
   }
 
+  async function buildBookMap() {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await apiRequest<BookArgumentMapResult>("/book-argument-map", {
+        method: "POST",
+        body: JSON.stringify({ workspace }),
+      });
+      setBookArgumentMap(result);
+      setMessage(t.bookMapReady);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedBuildBookMap);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveBookMap() {
+    if (!bookArgumentMap) return;
+    setBusy(true);
+    setError("");
+    try {
+      await apiRequest("/book-argument-map/save", {
+        method: "POST",
+        body: JSON.stringify({
+          workspace,
+          result: bookArgumentMap,
+        }),
+      });
+      setMessage(t.bookMapSaved);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedSaveBookMap);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveEvidenceCard(event: FormEvent) {
     event.preventDefault();
     if (!evidenceClaim.trim() || !evidenceLocator.trim() || !evidenceSupport.trim()) return;
@@ -1218,13 +1290,20 @@ function App() {
             ["evidence", t.evidence],
             ["feynman", t.feynman],
             ["synthesis", t.synthesis],
+            ["bookMap", t.bookMap],
           ].map(([id, label]) => (
             <button
               key={id}
               className={activeCapture === id ? "active" : ""}
               onClick={() =>
                 setActiveCapture(
-                  id as "note" | "review" | "evidence" | "feynman" | "synthesis",
+                  id as
+                    | "note"
+                    | "review"
+                    | "evidence"
+                    | "feynman"
+                    | "synthesis"
+                    | "bookMap",
                 )
               }
               type="button"
@@ -1428,6 +1507,49 @@ function App() {
               </section>
             )}
           </form>
+        )}
+
+        {activeCapture === "bookMap" && (
+          <div className="capture-form">
+            <button type="button" onClick={() => void buildBookMap()} disabled={busy}>
+              {t.buildBookMap}
+            </button>
+
+            {bookArgumentMap && (
+              <section className="feynman-result">
+                <h3>{t.coreProblem}</h3>
+                <p>{bookArgumentMap.core_problem}</p>
+
+                <h3>{t.coreAnswer}</h3>
+                <p>{bookArgumentMap.core_answer}</p>
+
+                <h3>{t.argumentChain}</h3>
+                <ul>
+                  {bookArgumentMap.argument_chain.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+
+                <h3>{t.keyEvidence}</h3>
+                <ul>
+                  {bookArgumentMap.key_evidence.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+
+                <h3>{t.rebuttalsAndLimits}</h3>
+                <ul>
+                  {bookArgumentMap.rebuttals_and_limits.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+
+                <button type="button" onClick={() => void saveBookMap()} disabled={busy}>
+                  {t.saveBookMap}
+                </button>
+              </section>
+            )}
+          </div>
         )}
 
         {activeCapture === "evidence" && (

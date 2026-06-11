@@ -16,6 +16,7 @@ from .service import (
     add_note,
     add_quote,
     add_review_card,
+    build_book_argument_map,
     check_feynman_summary,
     explain_selection,
     export_obsidian,
@@ -23,6 +24,7 @@ from .service import (
     get_status,
     list_chapters,
     read_chapter,
+    save_book_argument_map,
     synthesize_chapter_window,
     update_reading_state,
 )
@@ -80,6 +82,15 @@ class ChapterSynthesisRequest(BaseModel):
     workspace: Path
     start_chapter_id: str
     count: int = Field(default=3, ge=1, le=10)
+
+
+class BookArgumentMapRequest(BaseModel):
+    workspace: Path
+
+
+class SaveBookArgumentMapRequest(BaseModel):
+    workspace: Path
+    result: dict[str, object]
 
 
 class ReviewCardRequest(BaseModel):
@@ -178,6 +189,16 @@ def chapter_synthesis(request: ChapterSynthesisRequest) -> dict[str, object]:
         request.start_chapter_id,
         request.count,
     )
+
+
+@app.post("/book-argument-map")
+def book_argument_map(request: BookArgumentMapRequest) -> dict[str, object]:
+    return build_book_argument_map(request.workspace)
+
+
+@app.post("/book-argument-map/save")
+def save_argument_map(request: SaveBookArgumentMapRequest) -> dict[str, str]:
+    return save_book_argument_map(request.workspace, request.result)
 
 
 @app.post("/review-cards")
