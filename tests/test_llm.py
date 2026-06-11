@@ -8,6 +8,7 @@ import pytest
 from deep_reading.llm import (
     build_provider,
     configured_provider_name,
+    list_provider_models,
     list_provider_status,
     set_configured_provider_name,
     update_llm_settings,
@@ -42,6 +43,11 @@ def test_list_provider_status_includes_reserved_providers(monkeypatch: pytest.Mo
     assert providers["gemini"]["api_key_env"] == "GEMINI_API_KEY"
     assert providers["deepseek"]["api_key_env"] == "DEEPSEEK_API_KEY"
     assert providers["qwen"]["api_key_env"] == "QWEN_API_KEY"
+    assert providers["openai"]["model"] == "gpt-5.4-mini"
+    assert providers["claude"]["model"] == "claude-sonnet-4.6"
+    assert providers["gemini"]["model"] == "gemini-2.5-flash"
+    assert providers["deepseek"]["model"] == "deepseek-v4-flash"
+    assert providers["openai"]["fallback_models"][0]["value"] == "gpt-5.4-mini"
 
 
 def test_provider_status_detects_api_key_without_exposing_value(
@@ -107,6 +113,106 @@ def test_set_configured_provider_name_updates_runtime_env(monkeypatch: pytest.Mo
         assert configured_provider_name() == "claude"
     finally:
         os.environ["DEEP_READING_LLM_PROVIDER"] = "mock"
+
+
+def test_list_provider_models_returns_recommended_for_claude() -> None:
+    result = list_provider_models("claude")
+
+    assert result["source"] == "fallback"
+    assert result["reason"] == "recommended_only"
+    assert result["models"][0]["value"] == "claude-sonnet-4.6"  # type: ignore[index]
+
+
+def test_list_provider_models_falls_back_without_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    result = list_provider_models("openai")
+
+    assert result["source"] == "fallback"
+    assert result["reason"] == "auth"
+    assert result["models"][0]["value"] == "gpt-5.4-mini"  # type: ignore[index]
+
+
+def test_list_provider_models_fetches_openai_compatible_models(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(req: object, timeout: int) -> FakeResponse:
+        captured["url"] = req.full_url  # type: ignore[attr-defined]
+        captured["headers"] = dict(req.header_items())  # type: ignore[attr-defined]
+        captured["timeout"] = timeout
+        return FakeResponse(
+            {
+                "data": [
+                    {"id": "gpt-4o-mini", "created": 100},
+                    {"id": "gpt-5.2", "created": 110},
+                    {"id": "gpt-5.4-mini", "created": 120},
+                    {"id": "embedding-small", "created": 130},
+                ]
+            }
+        )
+
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-value")
+    monkeypatch.setattr("deep_reading.llm.request.urlopen", fake_urlopen)
+
+    result = list_provider_models("openai")
+
+    assert result["source"] == "remote"
+    assert captured["url"] == "https://api.openai.com/v1/models"
+    assert captured["timeout"] == 20
+    assert captured["headers"]["Authorization"].endswith("secret-value")  # type: ignore[index]
+    assert [item["value"] for item in result["models"][:3]] == [  # type: ignore[index]
+        "gpt-5.4-mini",
+        "gpt-5.2",
+        "gpt-4o-mini",
+    ]
+    assert "secret-value" not in str(result)
+
+
+def test_list_provider_models_fetches_gemini_base_model_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(req: object, timeout: int) -> FakeResponse:
+        captured["url"] = req.full_url  # type: ignore[attr-defined]
+        assert timeout == 20
+        return FakeResponse(
+            {
+                "models": [
+                    {
+                        "name": "models/gemini-2.5-flash",
+                        "baseModelId": "gemini-2.5-flash",
+                        "displayName": "Gemini 2.5 Flash",
+                    },
+                    {
+                        "name": "models/gemini-2.5-flash-preview-tts",
+                        "baseModelId": "gemini-2.5-flash-preview-tts",
+                        "displayName": "Gemini TTS",
+                    },
+                    {
+                        "name": "models/gemini-3-flash-preview",
+                        "baseModelId": "gemini-3-flash-preview",
+                        "displayName": "Gemini 3 Flash Preview",
+                    },
+                ]
+            }
+        )
+
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-secret")
+    monkeypatch.setattr("deep_reading.llm.request.urlopen", fake_urlopen)
+
+    result = list_provider_models("gemini")
+
+    assert result["source"] == "remote"
+    assert str(captured["url"]).startswith("https://generativelanguage.googleapis.com/v1beta/models")
+    assert [item["value"] for item in result["models"]] == [  # type: ignore[index]
+        "gemini-2.5-flash",
+        "gemini-3-flash-preview",
+    ]
+    assert "tts" not in str(result)
+    assert "gemini-secret" not in str(result)
 
 
 def test_mock_provider_runs_feynman_check() -> None:

@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
-from urllib import error, request
+from urllib import error, parse, request
 
 ProviderName = Literal["mock", "openai", "claude", "gemini", "deepseek", "qwen"]
 JSON_OBJECT_INSTRUCTIONS = (
@@ -24,6 +24,13 @@ class LLMProviderSpec:
     default_base_url: str | None
     model_env: str
     default_model: str
+    fallback_models: tuple[str, ...]
+    catalog_type: Literal["openai", "gemini", "recommended"] = "openai"
+    include_patterns: tuple[str, ...] = ()
+    preferred_patterns: tuple[str, ...] = ()
+    exclude_patterns: tuple[str, ...] = ()
+    preferred_only: bool = False
+    max_model_options: int = 12
 
     @property
     def base_url_env(self) -> str:
@@ -38,6 +45,8 @@ PROVIDER_SPECS: tuple[LLMProviderSpec, ...] = (
         default_base_url=None,
         model_env="DEEP_READING_MOCK_MODEL",
         default_model="mock-local",
+        fallback_models=("mock-local",),
+        catalog_type="recommended",
     ),
     LLMProviderSpec(
         name="openai",
@@ -45,7 +54,9 @@ PROVIDER_SPECS: tuple[LLMProviderSpec, ...] = (
         api_key_env="OPENAI_API_KEY",
         default_base_url="https://api.openai.com/v1",
         model_env="OPENAI_MODEL",
-        default_model="gpt-4.1-mini",
+        default_model="gpt-5.4-mini",
+        fallback_models=("gpt-5.4-mini", "gpt-5.2", "gpt-5-mini"),
+        preferred_patterns=("gpt-5", "gpt-4.1", "gpt-4o", "o3", "o4"),
     ),
     LLMProviderSpec(
         name="claude",
@@ -53,7 +64,9 @@ PROVIDER_SPECS: tuple[LLMProviderSpec, ...] = (
         api_key_env="ANTHROPIC_API_KEY",
         default_base_url="https://api.anthropic.com/v1",
         model_env="ANTHROPIC_MODEL",
-        default_model="claude-3-5-sonnet-latest",
+        default_model="claude-sonnet-4.6",
+        fallback_models=("claude-sonnet-4.6", "claude-opus-4.1"),
+        catalog_type="recommended",
     ),
     LLMProviderSpec(
         name="gemini",
@@ -61,7 +74,13 @@ PROVIDER_SPECS: tuple[LLMProviderSpec, ...] = (
         api_key_env="GEMINI_API_KEY",
         default_base_url="https://generativelanguage.googleapis.com/v1beta",
         model_env="GEMINI_MODEL",
-        default_model="gemini-1.5-pro",
+        default_model="gemini-2.5-flash",
+        fallback_models=("gemini-2.5-flash", "gemini-2.5-pro", "gemini-3-flash-preview"),
+        catalog_type="gemini",
+        preferred_patterns=("gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-flash"),
+        exclude_patterns=("tts", "audio", "banana", "imagen", "veo", "lyria", "embed"),
+        preferred_only=True,
+        max_model_options=10,
     ),
     LLMProviderSpec(
         name="deepseek",
@@ -69,7 +88,17 @@ PROVIDER_SPECS: tuple[LLMProviderSpec, ...] = (
         api_key_env="DEEPSEEK_API_KEY",
         default_base_url="https://api.deepseek.com",
         model_env="DEEPSEEK_MODEL",
-        default_model="deepseek-chat",
+        default_model="deepseek-v4-flash",
+        fallback_models=(
+            "deepseek-v4-flash",
+            "deepseek-v4-pro",
+            "deepseek-chat",
+            "deepseek-reasoner",
+        ),
+        include_patterns=("deepseek",),
+        preferred_patterns=("deepseek-v4", "deepseek-chat", "deepseek-reasoner"),
+        preferred_only=True,
+        max_model_options=8,
     ),
     LLMProviderSpec(
         name="qwen",
@@ -78,6 +107,11 @@ PROVIDER_SPECS: tuple[LLMProviderSpec, ...] = (
         default_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
         model_env="QWEN_MODEL",
         default_model="qwen-plus",
+        fallback_models=("qwen-plus", "qwen-turbo", "qwen-max"),
+        include_patterns=("qwen",),
+        preferred_patterns=("qwen-plus", "qwen-turbo", "qwen-max"),
+        preferred_only=True,
+        max_model_options=8,
     ),
 )
 
@@ -108,6 +142,7 @@ EVIDENCE_MARKERS = (
 )
 VAGUE_MARKERS = ("things", "stuff", "important", "interesting", "很多", "一些", "重要", "有趣")
 REQUEST_TIMEOUT_SECONDS = 60
+MODEL_CATALOG_TIMEOUT_SECONDS = 20
 
 JSON_SCHEMAS: dict[str, dict[str, object]] = {
     "feynman_check": {
@@ -261,6 +296,7 @@ def provider_status(spec: LLMProviderSpec) -> dict[str, object]:
         "base_url": base_url,
         "model_env": spec.model_env,
         "model": model,
+        "fallback_models": [{"value": item, "label": item} for item in spec.fallback_models],
         "selected_env": "DEEP_READING_LLM_PROVIDER",
     }
 
@@ -309,6 +345,187 @@ def provider_base_url(spec: LLMProviderSpec) -> str:
     if value is None:
         raise RuntimeError(f"{spec.display_name} provider has no base URL configured.")
     return value.rstrip("/")
+
+
+def provider_api_key(spec: LLMProviderSpec) -> str:
+    if spec.api_key_env is None:
+        return ""
+    runtime = provider_runtime_settings(spec)
+    return runtime.get("api_key") or env_value(spec.api_key_env) or ""
+
+
+def model_catalog_headers(spec: LLMProviderSpec) -> dict[str, str]:
+    api_key = provider_api_key(spec)
+    if not api_key:
+        raise RuntimeError(
+            f"{spec.display_name} provider requires {spec.api_key_env} to refresh models."
+        )
+    return {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+
+
+def build_models_endpoints(base_url: str) -> list[str]:
+    normalized = base_url.rstrip("/")
+    if not normalized:
+        return []
+    candidates = [f"{normalized}/models"]
+    if not normalized.endswith("/v1"):
+        candidates.append(f"{normalized}/v1/models")
+    return list(dict.fromkeys(candidates))
+
+
+def normalize_model_items(items: object, id_key: str = "id") -> list[dict[str, object]]:
+    if not isinstance(items, list):
+        return []
+    seen: set[str] = set()
+    models: list[dict[str, object]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        value = item.get(id_key) or item.get("name")
+        if not isinstance(value, str) or not value.strip():
+            continue
+        value = value.removeprefix("models/").strip()
+        if value in seen:
+            continue
+        seen.add(value)
+        created = item.get("created", 0)
+        label = item.get("displayName") if isinstance(item.get("displayName"), str) else value
+        models.append(
+            {
+                "value": value,
+                "label": label,
+                "created": created if isinstance(created, int | float) else 0,
+            }
+        )
+    return models
+
+
+def pick_preferred_models(
+    spec: LLMProviderSpec,
+    models: list[dict[str, object]],
+) -> list[dict[str, str]]:
+    def value(item: dict[str, object]) -> str:
+        return str(item.get("value", ""))
+
+    def lower_value(item: dict[str, object]) -> str:
+        return value(item).lower()
+
+    filtered = sorted(models, key=lambda item: int(item.get("created", 0) or 0), reverse=True)
+    if spec.include_patterns:
+        filtered = [
+            item
+            for item in filtered
+            if any(pattern in lower_value(item) for pattern in spec.include_patterns)
+        ]
+    if spec.exclude_patterns:
+        filtered = [
+            item
+            for item in filtered
+            if not any(pattern in lower_value(item) for pattern in spec.exclude_patterns)
+        ]
+
+    preferred: list[dict[str, object]] = []
+    remaining: list[dict[str, object]] = []
+    for item in filtered:
+        target = (
+            preferred
+            if any(pattern in lower_value(item) for pattern in spec.preferred_patterns)
+            else remaining
+        )
+        target.append(item)
+
+    candidates = preferred if spec.preferred_only and preferred else preferred + remaining
+    if not spec.preferred_patterns:
+        candidates = filtered
+    return [
+        {"value": value(item), "label": str(item.get("label") or value(item))}
+        for item in candidates[: spec.max_model_options]
+    ]
+
+
+def fallback_model_list(spec: LLMProviderSpec) -> list[dict[str, str]]:
+    return [{"value": item, "label": item} for item in spec.fallback_models]
+
+
+def read_json_url(url: str, headers: dict[str, str]) -> dict[str, object]:
+    req = request.Request(url, headers=headers, method="GET")
+    with request.urlopen(req, timeout=MODEL_CATALOG_TIMEOUT_SECONDS) as response:
+        data = json.loads(response.read().decode("utf-8"))
+    if not isinstance(data, dict):
+        raise RuntimeError("Model catalog response is not a JSON object.")
+    return data
+
+
+def remote_model_list(spec: LLMProviderSpec) -> list[dict[str, str]]:
+    if spec.catalog_type == "recommended":
+        return fallback_model_list(spec)
+    if spec.catalog_type == "gemini":
+        api_key = provider_api_key(spec)
+        if not api_key:
+            raise RuntimeError(
+                f"{spec.display_name} provider requires {spec.api_key_env} to refresh models."
+            )
+        data = read_json_url(
+            "https://generativelanguage.googleapis.com/v1beta/models"
+            f"?key={parse.quote(api_key)}",
+            {"Content-Type": "application/json"},
+        )
+        models = normalize_model_items(data.get("models"), "baseModelId")
+        return pick_preferred_models(spec, models)
+
+    last_error: Exception | None = None
+    for endpoint in build_models_endpoints(provider_base_url(spec)):
+        try:
+            data = read_json_url(endpoint, model_catalog_headers(spec))
+        except error.HTTPError as exc:
+            last_error = exc
+            if exc.code in {404, 405}:
+                continue
+            raise RuntimeError(provider_error_message(exc)) from exc
+        models = normalize_model_items(data.get("data"))
+        if models:
+            return pick_preferred_models(spec, models)
+    if last_error:
+        raise RuntimeError(str(last_error)) from last_error
+    return []
+
+
+def list_provider_models(provider: str) -> dict[str, object]:
+    spec = provider_spec(provider)
+    if spec.api_key_env is None:
+        return {
+            "provider": spec.name,
+            "models": fallback_model_list(spec),
+            "source": "fallback",
+            "reason": "local",
+        }
+    if spec.catalog_type == "recommended":
+        return {
+            "provider": spec.name,
+            "models": fallback_model_list(spec),
+            "source": "fallback",
+            "reason": "recommended_only",
+        }
+    try:
+        models = remote_model_list(spec)
+        if models:
+            return {"provider": spec.name, "models": models, "source": "remote", "reason": None}
+        return {
+            "provider": spec.name,
+            "models": fallback_model_list(spec),
+            "source": "fallback",
+            "reason": "empty_remote",
+        }
+    except Exception as exc:
+        return {
+            "provider": spec.name,
+            "models": fallback_model_list(spec),
+            "source": "fallback",
+            "reason": "auth" if "requires" in str(exc) else "unavailable",
+        }
 
 
 def response_text(data: dict[str, object]) -> str:

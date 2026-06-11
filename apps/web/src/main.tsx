@@ -213,12 +213,25 @@ type LLMProviderStatus = {
   base_url: string | null;
   model_env: string;
   model: string;
+  fallback_models: LLMModelOption[];
   selected_env: string;
 };
 
 type LLMProviderList = {
   selected: string;
   providers: LLMProviderStatus[];
+};
+
+type LLMModelOption = {
+  value: string;
+  label: string;
+};
+
+type LLMModelCatalog = {
+  provider: string;
+  models: LLMModelOption[];
+  source: "remote" | "fallback";
+  reason: string | null;
 };
 
 declare global {
@@ -255,11 +268,18 @@ const translations = {
     appSubtitle: "Workspace reader",
     language: "Language",
     providerSettings: "AI provider",
+    settings: "Settings",
+    cancel: "Cancel",
     provider: "Provider",
     providerConfigured: "Configured",
     providerNotConfigured: "Needs key",
     providerKeyEnv: "API key",
     providerModelEnv: "Model",
+    providerModelRefresh: "Refresh models",
+    providerModelSourceRemote: "Live model list",
+    providerModelSourceFallback: "Recommended models",
+    providerModelSourceAuth: "Add an API key and save to refresh live models",
+    providerModelSourceUnavailable: "Live model list unavailable; using recommendations",
     providerBaseUrlEnv: "Base URL",
     providerSelectedEnv: "Selected by",
     providerLocalOnly: "Local mock does not require a key",
@@ -486,11 +506,18 @@ const translations = {
     appSubtitle: "工作区阅读器",
     language: "语言",
     providerSettings: "AI 接口",
+    settings: "设置",
+    cancel: "取消",
     provider: "供应商",
     providerConfigured: "已配置",
     providerNotConfigured: "需要 key",
     providerKeyEnv: "API key",
     providerModelEnv: "模型",
+    providerModelRefresh: "刷新模型",
+    providerModelSourceRemote: "实时模型列表",
+    providerModelSourceFallback: "推荐模型",
+    providerModelSourceAuth: "填写 API key 并保存后可刷新实时模型",
+    providerModelSourceUnavailable: "实时模型列表不可用，已使用推荐模型",
     providerBaseUrlEnv: "Base URL",
     providerSelectedEnv: "当前选择",
     providerLocalOnly: "本地 mock 不需要 key",
@@ -842,6 +869,11 @@ function App() {
   const [providerModelDraft, setProviderModelDraft] = useState("");
   const [providerBaseUrlDraft, setProviderBaseUrlDraft] = useState("");
   const [providerApiKeyDraft, setProviderApiKeyDraft] = useState("");
+  const [providerModelCatalogs, setProviderModelCatalogs] = useState<
+    Record<string, LLMModelCatalog>
+  >({});
+  const [loadingProviderModels, setLoadingProviderModels] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [weakConcept, setWeakConcept] = useState("");
   const [weakConceptNote, setWeakConceptNote] = useState("");
   const [weakConceptChapterId, setWeakConceptChapterId] = useState("");
@@ -877,6 +909,21 @@ function App() {
       .map(([key, value]) => `${key}: ${value}`)
       .join(" · ");
   }, [status, t.noWorkspaceLoaded]);
+
+  const currentProvider = useMemo(() => {
+    if (!llmProviders) return null;
+    return (
+      llmProviders.providers.find((provider) => provider.name === llmProviders.selected) ?? null
+    );
+  }, [llmProviders]);
+
+  const providerModelCatalog = providerDraft ? providerModelCatalogs[providerDraft] : null;
+
+  useEffect(() => {
+    if (settingsOpen && providerDraft && !providerModelCatalogs[providerDraft]) {
+      void loadLLMModels(providerDraft);
+    }
+  }, [settingsOpen, providerDraft, providerModelCatalogs]);
 
   useEffect(() => {
     document.addEventListener("selectionchange", handleTextSelection);
@@ -918,8 +965,23 @@ function App() {
       const result = await apiRequest<LLMProviderList>("/llm/providers");
       setLlmProviders(result);
       syncProviderDrafts(result, result.selected);
+      void loadLLMModels(result.selected);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedLoadProviders);
+    }
+  }
+
+  async function loadLLMModels(providerName = providerDraft) {
+    if (!providerName) return;
+    setLoadingProviderModels(true);
+    try {
+      const query = new URLSearchParams({ provider: providerName });
+      const result = await apiRequest<LLMModelCatalog>(`/llm/models?${query.toString()}`);
+      setProviderModelCatalogs((current) => ({ ...current, [providerName]: result }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedLoadProviders);
+    } finally {
+      setLoadingProviderModels(false);
     }
   }
 
@@ -934,6 +996,7 @@ function App() {
   function selectProviderDraft(nextProvider: string) {
     if (!llmProviders) return;
     syncProviderDrafts(llmProviders, nextProvider);
+    void loadLLMModels(nextProvider);
   }
 
   async function saveLLMSettings(event: FormEvent) {
@@ -954,6 +1017,7 @@ function App() {
       });
       setLlmProviders(result);
       syncProviderDrafts(result, result.selected);
+      setSettingsOpen(false);
       setMessage(t.providerSettingsSaved);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedUpdateProvider);
@@ -1630,102 +1694,53 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
-      <aside className="sidebar">
-        <header className="brand">
+    <main className="app-root">
+      <header className="top-nav">
+        <div className="top-nav-brand">
           <span className="brand-mark">DR</span>
           <div>
             <h1>{t.appTitle}</h1>
             <p>{t.appSubtitle}</p>
           </div>
-        </header>
-
-        <div className="language-switcher" aria-label={t.language}>
-          {languages.map((option) => (
-            <button
-              key={option.code}
-              className={language === option.code ? "active" : ""}
-              onClick={() => {
-                setLanguage(option.code);
-                setMessage("");
-                setError("");
-              }}
-              type="button"
-            >
-              {option.label}
-            </button>
-          ))}
         </div>
-
-        {llmProviders && (
-          <form className="provider-settings" onSubmit={saveLLMSettings}>
-            <span className="eyebrow">{t.providerSettings}</span>
-            <label htmlFor="llm-provider">{t.provider}</label>
-            <select
-              id="llm-provider"
-              value={providerDraft}
-              onChange={(event) => selectProviderDraft(event.target.value)}
-              disabled={busy}
+        <p className="top-nav-workspace" title={status?.workspace ?? workspace}>
+          {status?.workspace ?? t.noWorkspaceLoaded}
+        </p>
+        <div className="top-nav-actions">
+          <div className="language-switcher" aria-label={t.language}>
+            {languages.map((option) => (
+              <button
+                key={option.code}
+                className={language === option.code ? "active" : ""}
+                onClick={() => {
+                  setLanguage(option.code);
+                  setMessage("");
+                  setError("");
+                }}
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {currentProvider && (
+            <p
+              className={currentProvider.configured ? "provider-pill success" : "provider-pill muted"}
             >
-              {llmProviders.providers.map((provider) => (
-                <option key={provider.name} value={provider.name}>
-                  {provider.display_name}
-                </option>
-              ))}
-            </select>
+              <strong>{currentProvider.display_name}</strong>
+              <span>
+                {currentProvider.configured ? t.providerConfigured : t.providerNotConfigured}
+              </span>
+            </p>
+          )}
+          <button type="button" onClick={() => setSettingsOpen(true)} disabled={!llmProviders}>
+            {t.settings}
+          </button>
+        </div>
+      </header>
 
-            {llmProviders.providers
-              .filter((provider) => provider.name === providerDraft)
-              .map((provider) => (
-                <div className="provider-details" key={provider.name}>
-                  <p className={provider.configured ? "success" : "muted"}>
-                    {provider.configured ? t.providerConfigured : t.providerNotConfigured}
-                  </p>
-                  {provider.api_key_env ? (
-                    <>
-                      <label htmlFor="llm-model">{t.providerModelEnv}</label>
-                      <input
-                        id="llm-model"
-                        value={providerModelDraft}
-                        onChange={(event) => setProviderModelDraft(event.target.value)}
-                        placeholder={provider.model_env}
-                        spellCheck={false}
-                      />
-                      <label htmlFor="llm-base-url">{t.providerBaseUrlEnv}</label>
-                      <input
-                        id="llm-base-url"
-                        value={providerBaseUrlDraft}
-                        onChange={(event) => setProviderBaseUrlDraft(event.target.value)}
-                        placeholder={provider.base_url_env}
-                        spellCheck={false}
-                      />
-                      <label htmlFor="llm-api-key">{t.providerApiKeyInput}</label>
-                      <input
-                        id="llm-api-key"
-                        value={providerApiKeyDraft}
-                        onChange={(event) => setProviderApiKeyDraft(event.target.value)}
-                        placeholder={t.providerApiKeyPlaceholder}
-                        type="password"
-                        spellCheck={false}
-                      />
-                      <dl>
-                        <div>
-                          <dt>{t.providerKeyEnv}</dt>
-                          <dd>{provider.api_key_env}</dd>
-                        </div>
-                      </dl>
-                    </>
-                  ) : (
-                    <p className="muted">{t.providerLocalOnly}</p>
-                  )}
-                </div>
-              ))}
-            <button type="submit" disabled={busy || !providerDraft}>
-              {t.saveProviderSettings}
-            </button>
-          </form>
-        )}
-
+      <div className="workspace-layout">
+        <aside className="sidebar">
         {window.deepReadingDesktop && (
           <form className="create-workspace-form" onSubmit={createWorkspace}>
             <span className="eyebrow">{t.newWorkspace}</span>
@@ -1989,9 +2004,9 @@ function App() {
             </button>
           ))}
         </nav>
-      </aside>
+        </aside>
 
-      <section className="reader-pane">
+        <section className="reader-pane">
         {selectionToolbarPosition && selectedText && (
           <div
             className="selection-toolbar"
@@ -2066,9 +2081,9 @@ function App() {
         >
           {activeChapter ? activeChapter.text : t.emptyReader}
         </article>
-      </section>
+        </section>
 
-      <aside className="notes-pane">
+        <aside className="notes-pane">
         <header>
           <span className="eyebrow">{t.capture}</span>
           <h2>{t.buildUnderstanding}</h2>
@@ -2596,6 +2611,125 @@ function App() {
           {error && <p className="error">{error}</p>}
         </div>
       </aside>
+      </div>
+
+      {settingsOpen && llmProviders && (
+        <div className="settings-overlay" onClick={() => setSettingsOpen(false)}>
+          <form
+            className="provider-settings settings-modal"
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={saveLLMSettings}
+          >
+            <div className="settings-modal-header">
+              <div>
+                <span className="eyebrow">{t.providerSettings}</span>
+                <h2>{t.settings}</h2>
+              </div>
+              <button type="button" onClick={() => setSettingsOpen(false)} aria-label={t.cancel}>
+                ×
+              </button>
+            </div>
+
+            <label htmlFor="llm-provider">{t.provider}</label>
+            <select
+              id="llm-provider"
+              value={providerDraft}
+              onChange={(event) => selectProviderDraft(event.target.value)}
+              disabled={busy}
+            >
+              {llmProviders.providers.map((provider) => (
+                <option key={provider.name} value={provider.name}>
+                  {provider.display_name}
+                </option>
+              ))}
+            </select>
+
+            {llmProviders.providers
+              .filter((provider) => provider.name === providerDraft)
+              .map((provider) => (
+                <div className="provider-details" key={provider.name}>
+                  <p className={provider.configured ? "success" : "muted"}>
+                    {provider.configured ? t.providerConfigured : t.providerNotConfigured}
+                  </p>
+                  {provider.api_key_env ? (
+                    <>
+                      <label htmlFor="llm-model">{t.providerModelEnv}</label>
+                      <div className="model-picker-row">
+                        <input
+                          id="llm-model"
+                          value={providerModelDraft}
+                          onChange={(event) => setProviderModelDraft(event.target.value)}
+                          placeholder={provider.model_env}
+                          spellCheck={false}
+                          list="llm-model-options"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void loadLLMModels(provider.name)}
+                          disabled={busy || loadingProviderModels}
+                        >
+                          {t.providerModelRefresh}
+                        </button>
+                      </div>
+                      <datalist id="llm-model-options">
+                        {(providerModelCatalog?.models ?? provider.fallback_models).map((model) => (
+                          <option key={model.value} value={model.value}>
+                            {model.label}
+                          </option>
+                        ))}
+                      </datalist>
+                      {providerModelCatalog && (
+                        <p className="muted">
+                          {providerModelCatalog.source === "remote"
+                            ? t.providerModelSourceRemote
+                            : providerModelCatalog.reason === "auth"
+                              ? t.providerModelSourceAuth
+                              : providerModelCatalog.reason === "unavailable"
+                                ? t.providerModelSourceUnavailable
+                                : t.providerModelSourceFallback}
+                        </p>
+                      )}
+                      <label htmlFor="llm-base-url">{t.providerBaseUrlEnv}</label>
+                      <input
+                        id="llm-base-url"
+                        value={providerBaseUrlDraft}
+                        onChange={(event) => setProviderBaseUrlDraft(event.target.value)}
+                        placeholder={provider.base_url_env}
+                        spellCheck={false}
+                      />
+                      <label htmlFor="llm-api-key">{t.providerApiKeyInput}</label>
+                      <input
+                        id="llm-api-key"
+                        value={providerApiKeyDraft}
+                        onChange={(event) => setProviderApiKeyDraft(event.target.value)}
+                        placeholder={t.providerApiKeyPlaceholder}
+                        type="password"
+                        spellCheck={false}
+                      />
+                      <dl>
+                        <div>
+                          <dt>{t.providerKeyEnv}</dt>
+                          <dd>{provider.api_key_env}</dd>
+                        </div>
+                      </dl>
+                    </>
+                  ) : (
+                    <p className="muted">{t.providerLocalOnly}</p>
+                  )}
+                </div>
+              ))}
+
+            <div className="settings-actions">
+              <button type="button" onClick={() => setSettingsOpen(false)}>
+                {t.cancel}
+              </button>
+              <button type="submit" disabled={busy || !providerDraft}>
+                {t.saveProviderSettings}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </main>
   );
 }

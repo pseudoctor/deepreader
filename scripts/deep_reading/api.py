@@ -11,7 +11,12 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .errors import ExtractionError
-from .llm import list_provider_status, set_configured_provider_name, update_llm_settings
+from .llm import (
+    list_provider_models,
+    list_provider_status,
+    set_configured_provider_name,
+    update_llm_settings,
+)
 from .service import (
     add_evidence_card,
     add_note,
@@ -194,6 +199,14 @@ def update_llm_provider(request: LLMProviderRequest) -> dict[str, object]:
 @app.get("/llm/settings")
 def llm_settings() -> dict[str, object]:
     return list_provider_status()
+
+
+@app.get("/llm/models")
+def llm_models(provider: str) -> dict[str, object]:
+    try:
+        return list_provider_models(provider)
+    except ValueError as exc:
+        raise ExtractionError(str(exc)) from exc
 
 
 @app.post("/llm/settings")

@@ -102,6 +102,28 @@ def test_llm_settings_endpoint_saves_runtime_config_without_returning_key(
     assert "saved-secret" not in str(data)
 
 
+def test_llm_models_endpoint_returns_model_catalog() -> None:
+    client = TestClient(app)
+
+    response = client.get("/llm/models", params={"provider": "claude"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["provider"] == "claude"
+    assert data["source"] == "fallback"
+    assert data["reason"] == "recommended_only"
+    assert data["models"][0]["value"] == "claude-sonnet-4.6"
+
+
+def test_llm_models_endpoint_rejects_unknown_provider() -> None:
+    client = TestClient(app)
+
+    response = client.get("/llm/models", params={"provider": "unknown"})
+
+    assert response.status_code == 400
+    assert "Unsupported LLM provider" in response.json()["error"]
+
+
 def test_status_endpoint_returns_workspace_status(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     client = TestClient(app)

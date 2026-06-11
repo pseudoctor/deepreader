@@ -34,10 +34,73 @@ button:disabled {
   opacity: 0.55;
 }
 
-.app-shell {
+.app-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.workspace-layout {
   display: grid;
   grid-template-columns: minmax(260px, 320px) minmax(420px, 1fr) minmax(280px, 360px);
-  min-height: 100vh;
+  flex: 1;
+  min-height: 0;
+}
+
+.top-nav {
+  align-items: center;
+  background: #fbfaf5;
+  border-bottom: 1px solid #cfd8d0;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: auto minmax(180px, 1fr) auto;
+  min-height: 68px;
+  padding: 12px 18px;
+}
+
+.top-nav-brand {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+}
+
+.top-nav-brand h1 {
+  font-size: 1rem;
+  line-height: 1.25;
+  margin: 0;
+}
+
+.top-nav-brand p,
+.top-nav-workspace {
+  color: #64716b;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.top-nav-workspace {
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.top-nav-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.top-nav-actions > button {
+  background: #214d45;
+  border-color: #214d45;
+  color: #fffefa;
+  font-weight: 700;
+  padding: 0 14px;
 }
 
 .sidebar,
@@ -55,14 +118,6 @@ button:disabled {
   padding: 20px;
 }
 
-.brand {
-  align-items: center;
-  border-bottom: 1px solid #cfd8d0;
-  display: flex;
-  gap: 12px;
-  padding: 18px;
-}
-
 .brand-mark {
   align-items: center;
   background: #214d45;
@@ -75,18 +130,11 @@ button:disabled {
   width: 38px;
 }
 
-.brand h1,
 .notes-pane h2,
 .reader-toolbar h2 {
   font-size: 1rem;
   line-height: 1.25;
   margin: 0;
-}
-
-.brand p {
-  color: #64716b;
-  font-size: 0.8rem;
-  margin: 2px 0 0;
 }
 
 .workspace-form,
@@ -139,11 +187,10 @@ button:disabled {
 }
 
 .language-switcher {
-  border-bottom: 1px solid #cfd8d0;
   display: grid;
   gap: 6px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  padding: 12px 16px;
+  padding: 0;
 }
 
 .language-switcher button {
@@ -159,6 +206,27 @@ button:disabled {
   color: #fffefa;
 }
 
+.provider-pill {
+  align-items: center;
+  border: 1px solid #c8d1ca;
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  min-height: 36px;
+  padding: 7px 10px;
+}
+
+.provider-pill strong,
+.provider-pill span {
+  font-size: 0.78rem;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.provider-pill strong {
+  color: #1d2525;
+}
+
 .provider-settings {
   background: #eef2ed;
 }
@@ -166,6 +234,17 @@ button:disabled {
 .provider-details {
   display: grid;
   gap: 8px;
+}
+
+.model-picker-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.model-picker-row button {
+  padding: 0 12px;
+  white-space: nowrap;
 }
 
 .provider-details dl {
@@ -593,6 +672,67 @@ textarea.mini {
   margin-top: 18px;
 }
 
+.settings-overlay {
+  align-items: center;
+  background: rgb(29 37 37 / 44%);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 18px;
+  position: fixed;
+  z-index: 30;
+}
+
+.settings-modal {
+  border: 1px solid #b7c5bc;
+  box-shadow: 0 24px 80px rgb(29 37 37 / 28%);
+  gap: 10px;
+  max-height: min(760px, calc(100vh - 36px));
+  max-width: 560px;
+  overflow: auto;
+  padding: 18px;
+  width: min(560px, 100%);
+}
+
+.settings-modal-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.settings-modal-header h2 {
+  font-size: 1.08rem;
+  line-height: 1.25;
+  margin: 2px 0 0;
+}
+
+.settings-modal-header button {
+  background: #fffefa;
+  border-color: #c8d1ca;
+  font-size: 1.1rem;
+  font-weight: 700;
+  min-height: 32px;
+  width: 34px;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.settings-actions button {
+  padding: 0 14px;
+}
+
+.settings-actions button[type="submit"] {
+  background: #214d45;
+  border-color: #214d45;
+  color: #fffefa;
+}
+
 .muted,
 .success,
 .error {
@@ -614,7 +754,20 @@ textarea.mini {
 }
 
 @media (max-width: 980px) {
-  .app-shell {
+  .top-nav {
+    align-items: flex-start;
+    grid-template-columns: 1fr;
+  }
+
+  .top-nav-workspace {
+    text-align: left;
+  }
+
+  .top-nav-actions {
+    justify-content: flex-start;
+  }
+
+  .workspace-layout {
     grid-template-columns: 1fr;
   }
 
@@ -638,6 +791,10 @@ textarea.mini {
   }
 
   .reading-guide-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .model-picker-row {
     grid-template-columns: 1fr;
   }
 }
