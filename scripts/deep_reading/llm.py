@@ -6,6 +6,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 from urllib import error, request
 
@@ -82,6 +83,8 @@ PROVIDER_SPECS: tuple[LLMProviderSpec, ...] = (
 
 PROVIDER_NAMES = {spec.name for spec in PROVIDER_SPECS}
 DEFAULT_PROVIDER: ProviderName = "mock"
+SETTINGS_PATH_ENV = "DEEP_READING_LLM_SETTINGS_PATH"
+DEFAULT_SETTINGS_PATH = ".deep-reading-local/llm_settings.json"
 CAUSAL_MARKERS = (
     "because",
     "therefore",
@@ -153,7 +156,78 @@ def provider_spec(name: str) -> LLMProviderSpec:
     raise ValueError(f"Unsupported LLM provider: {name}")
 
 
+def settings_path() -> Path:
+    return Path(os.environ.get(SETTINGS_PATH_ENV, DEFAULT_SETTINGS_PATH))
+
+
+def load_llm_settings() -> dict[str, object]:
+    path = settings_path()
+    if not path.exists():
+        return {"selected": None, "providers": {}}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        return {"selected": None, "providers": {}}
+    providers = data.get("providers", {})
+    return {
+        "selected": data.get("selected") if isinstance(data.get("selected"), str) else None,
+        "providers": providers if isinstance(providers, dict) else {},
+    }
+
+
+def save_llm_settings(data: dict[str, object]) -> None:
+    path = settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def provider_runtime_settings(spec: LLMProviderSpec) -> dict[str, str]:
+    settings = load_llm_settings()
+    providers = settings.get("providers", {})
+    if not isinstance(providers, dict):
+        return {}
+    provider_data = providers.get(spec.name, {})
+    if not isinstance(provider_data, dict):
+        return {}
+    return {
+        key: value.strip()
+        for key, value in provider_data.items()
+        if key in {"api_key", "model", "base_url"} and isinstance(value, str) and value.strip()
+    }
+
+
+def update_llm_settings(
+    provider: str,
+    model: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
+) -> dict[str, object]:
+    spec = provider_spec(provider)
+    current = load_llm_settings()
+    providers = current.get("providers", {})
+    if not isinstance(providers, dict):
+        providers = {}
+    provider_data = providers.get(spec.name, {})
+    if not isinstance(provider_data, dict):
+        provider_data = {}
+
+    if model is not None:
+        provider_data["model"] = model.strip()
+    if base_url is not None:
+        provider_data["base_url"] = base_url.strip()
+    if api_key is not None and api_key.strip():
+        provider_data["api_key"] = api_key.strip()
+
+    providers[spec.name] = provider_data
+    next_settings = {"selected": spec.name, "providers": providers}
+    save_llm_settings(next_settings)
+    os.environ["DEEP_READING_LLM_PROVIDER"] = spec.name
+    return list_provider_status()
+
+
 def configured_provider_name() -> ProviderName:
+    selected = load_llm_settings().get("selected")
+    if isinstance(selected, str) and selected in PROVIDER_NAMES:
+        return selected  # type: ignore[return-value]
     value = os.environ.get("DEEP_READING_LLM_PROVIDER", DEFAULT_PROVIDER).strip().lower()
     if value in PROVIDER_NAMES:
         return value  # type: ignore[return-value]
@@ -162,15 +236,21 @@ def configured_provider_name() -> ProviderName:
 
 def set_configured_provider_name(name: str) -> ProviderName:
     spec = provider_spec(name)
-    os.environ["DEEP_READING_LLM_PROVIDER"] = spec.name
+    update_llm_settings(spec.name)
     return spec.name
 
 
 def is_configured(spec: LLMProviderSpec) -> bool:
-    return spec.api_key_env is None or bool(os.environ.get(spec.api_key_env, "").strip())
+    if spec.api_key_env is None:
+        return True
+    runtime = provider_runtime_settings(spec)
+    return bool(runtime.get("api_key") or os.environ.get(spec.api_key_env, "").strip())
 
 
 def provider_status(spec: LLMProviderSpec) -> dict[str, object]:
+    runtime = provider_runtime_settings(spec)
+    base_url = runtime.get("base_url") or os.environ.get(spec.base_url_env, spec.default_base_url)
+    model = runtime.get("model") or os.environ.get(spec.model_env, spec.default_model)
     return {
         "name": spec.name,
         "display_name": spec.display_name,
@@ -178,9 +258,9 @@ def provider_status(spec: LLMProviderSpec) -> dict[str, object]:
         "api_key_env": spec.api_key_env,
         "api_key_present": is_configured(spec),
         "base_url_env": spec.base_url_env,
-        "base_url": os.environ.get(spec.base_url_env, spec.default_base_url),
+        "base_url": base_url,
         "model_env": spec.model_env,
-        "model": os.environ.get(spec.model_env, spec.default_model),
+        "model": model,
         "selected_env": "DEEP_READING_LLM_PROVIDER",
     }
 
@@ -219,11 +299,13 @@ def env_value(name: str) -> str | None:
 
 
 def provider_model(spec: LLMProviderSpec) -> str:
-    return env_value(spec.model_env) or spec.default_model
+    runtime = provider_runtime_settings(spec)
+    return runtime.get("model") or env_value(spec.model_env) or spec.default_model
 
 
 def provider_base_url(spec: LLMProviderSpec) -> str:
-    value = env_value(spec.base_url_env) or spec.default_base_url
+    runtime = provider_runtime_settings(spec)
+    value = runtime.get("base_url") or env_value(spec.base_url_env) or spec.default_base_url
     if value is None:
         raise RuntimeError(f"{spec.display_name} provider has no base URL configured.")
     return value.rstrip("/")
@@ -333,7 +415,8 @@ def parse_json_text(spec: LLMProviderSpec, text: str) -> dict[str, object]:
 def require_api_key(spec: LLMProviderSpec) -> str:
     if spec.api_key_env is None:
         raise RuntimeError(f"{spec.display_name} provider has no API key environment configured.")
-    api_key = env_value(spec.api_key_env)
+    runtime = provider_runtime_settings(spec)
+    api_key = runtime.get("api_key") or env_value(spec.api_key_env)
     if api_key is None:
         raise RuntimeError(f"{spec.display_name} API key missing. Set {spec.api_key_env}.")
     return api_key

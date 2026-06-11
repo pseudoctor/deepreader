@@ -73,6 +73,35 @@ def test_llm_providers_endpoint_rejects_unknown_provider() -> None:
     assert "Unsupported LLM provider" in response.json()["error"]
 
 
+def test_llm_settings_endpoint_saves_runtime_config_without_returning_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEEP_READING_LLM_SETTINGS_PATH", str(tmp_path / "settings.json"))
+    monkeypatch.setenv("DEEP_READING_LLM_PROVIDER", "mock")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    client = TestClient(app)
+
+    response = client.post(
+        "/llm/settings",
+        json={
+            "provider": "openai",
+            "model": "gpt-saved",
+            "base_url": "https://example.test/v1",
+            "api_key": "saved-secret",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    providers = {item["name"]: item for item in data["providers"]}
+    assert data["selected"] == "openai"
+    assert providers["openai"]["api_key_present"] is True
+    assert providers["openai"]["model"] == "gpt-saved"
+    assert providers["openai"]["base_url"] == "https://example.test/v1"
+    assert "saved-secret" not in str(data)
+
+
 def test_status_endpoint_returns_workspace_status(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     client = TestClient(app)

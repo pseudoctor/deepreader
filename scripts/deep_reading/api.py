@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .errors import ExtractionError
-from .llm import list_provider_status, set_configured_provider_name
+from .llm import list_provider_status, set_configured_provider_name, update_llm_settings
 from .service import (
     add_evidence_card,
     add_note,
@@ -160,6 +160,13 @@ class LLMProviderRequest(BaseModel):
     provider: str
 
 
+class LLMSettingsRequest(BaseModel):
+    provider: str
+    model: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+
+
 @app.exception_handler(ExtractionError)
 async def extraction_error_handler(request, exc: ExtractionError) -> JSONResponse:  # noqa: ANN001
     return JSONResponse(status_code=400, content={"error": str(exc)})
@@ -182,6 +189,24 @@ def update_llm_provider(request: LLMProviderRequest) -> dict[str, object]:
     except ValueError as exc:
         raise ExtractionError(str(exc)) from exc
     return list_provider_status()
+
+
+@app.get("/llm/settings")
+def llm_settings() -> dict[str, object]:
+    return list_provider_status()
+
+
+@app.post("/llm/settings")
+def update_settings(request: LLMSettingsRequest) -> dict[str, object]:
+    try:
+        return update_llm_settings(
+            request.provider,
+            request.model,
+            request.base_url,
+            request.api_key,
+        )
+    except ValueError as exc:
+        raise ExtractionError(str(exc)) from exc
 
 
 @app.get("/status")

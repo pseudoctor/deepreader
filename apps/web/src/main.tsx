@@ -263,6 +263,9 @@ const translations = {
     providerBaseUrlEnv: "Base URL",
     providerSelectedEnv: "Selected by",
     providerLocalOnly: "Local mock does not require a key",
+    providerApiKeyInput: "API key",
+    providerApiKeyPlaceholder: "Paste key to save or leave blank to keep existing",
+    saveProviderSettings: "Save AI settings",
     providerSettingsSaved: "AI provider updated",
     failedLoadProviders: "Failed to load AI providers",
     failedUpdateProvider: "Failed to update AI provider",
@@ -491,6 +494,9 @@ const translations = {
     providerBaseUrlEnv: "Base URL",
     providerSelectedEnv: "当前选择",
     providerLocalOnly: "本地 mock 不需要 key",
+    providerApiKeyInput: "API key",
+    providerApiKeyPlaceholder: "粘贴 key 后保存；留空则保留已有 key",
+    saveProviderSettings: "保存 AI 设置",
     providerSettingsSaved: "AI 接口已更新",
     failedLoadProviders: "载入 AI 接口失败",
     failedUpdateProvider: "更新 AI 接口失败",
@@ -832,6 +838,10 @@ function App() {
   const [obsidianFolder, setObsidianFolder] = useState(getInitialObsidianFolder);
   const [recentWorkspaces, setRecentWorkspaces] = useState<string[]>(getInitialRecentWorkspaces);
   const [llmProviders, setLlmProviders] = useState<LLMProviderList | null>(null);
+  const [providerDraft, setProviderDraft] = useState("");
+  const [providerModelDraft, setProviderModelDraft] = useState("");
+  const [providerBaseUrlDraft, setProviderBaseUrlDraft] = useState("");
+  const [providerApiKeyDraft, setProviderApiKeyDraft] = useState("");
   const [weakConcept, setWeakConcept] = useState("");
   const [weakConceptNote, setWeakConceptNote] = useState("");
   const [weakConceptChapterId, setWeakConceptChapterId] = useState("");
@@ -907,21 +917,43 @@ function App() {
     try {
       const result = await apiRequest<LLMProviderList>("/llm/providers");
       setLlmProviders(result);
+      syncProviderDrafts(result, result.selected);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedLoadProviders);
     }
   }
 
-  async function updateLLMProvider(nextProvider: string) {
+  function syncProviderDrafts(result: LLMProviderList, selectedName: string) {
+    const provider = result.providers.find((item) => item.name === selectedName);
+    setProviderDraft(selectedName);
+    setProviderModelDraft(provider?.model ?? "");
+    setProviderBaseUrlDraft(provider?.base_url ?? "");
+    setProviderApiKeyDraft("");
+  }
+
+  function selectProviderDraft(nextProvider: string) {
+    if (!llmProviders) return;
+    syncProviderDrafts(llmProviders, nextProvider);
+  }
+
+  async function saveLLMSettings(event: FormEvent) {
+    event.preventDefault();
+    if (!providerDraft) return;
     setBusy(true);
     setError("");
     setMessage("");
     try {
-      const result = await apiRequest<LLMProviderList>("/llm/providers", {
+      const result = await apiRequest<LLMProviderList>("/llm/settings", {
         method: "POST",
-        body: JSON.stringify({ provider: nextProvider }),
+        body: JSON.stringify({
+          provider: providerDraft,
+          model: providerModelDraft,
+          base_url: providerBaseUrlDraft,
+          api_key: providerApiKeyDraft,
+        }),
       });
       setLlmProviders(result);
+      syncProviderDrafts(result, result.selected);
       setMessage(t.providerSettingsSaved);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedUpdateProvider);
@@ -1626,13 +1658,13 @@ function App() {
         </div>
 
         {llmProviders && (
-          <section className="provider-settings">
+          <form className="provider-settings" onSubmit={saveLLMSettings}>
             <span className="eyebrow">{t.providerSettings}</span>
             <label htmlFor="llm-provider">{t.provider}</label>
             <select
               id="llm-provider"
-              value={llmProviders.selected}
-              onChange={(event) => void updateLLMProvider(event.target.value)}
+              value={providerDraft}
+              onChange={(event) => selectProviderDraft(event.target.value)}
               disabled={busy}
             >
               {llmProviders.providers.map((provider) => (
@@ -1643,41 +1675,55 @@ function App() {
             </select>
 
             {llmProviders.providers
-              .filter((provider) => provider.name === llmProviders.selected)
+              .filter((provider) => provider.name === providerDraft)
               .map((provider) => (
                 <div className="provider-details" key={provider.name}>
                   <p className={provider.configured ? "success" : "muted"}>
                     {provider.configured ? t.providerConfigured : t.providerNotConfigured}
                   </p>
                   {provider.api_key_env ? (
-                    <dl>
-                      <div>
-                        <dt>{t.providerKeyEnv}</dt>
-                        <dd>{provider.api_key_env}</dd>
-                      </div>
-                      <div>
-                        <dt>{t.providerModelEnv}</dt>
-                        <dd>
-                          {provider.model_env} = {provider.model}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{t.providerBaseUrlEnv}</dt>
-                        <dd>
-                          {provider.base_url_env} = {provider.base_url}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{t.providerSelectedEnv}</dt>
-                        <dd>{provider.selected_env}</dd>
-                      </div>
-                    </dl>
+                    <>
+                      <label htmlFor="llm-model">{t.providerModelEnv}</label>
+                      <input
+                        id="llm-model"
+                        value={providerModelDraft}
+                        onChange={(event) => setProviderModelDraft(event.target.value)}
+                        placeholder={provider.model_env}
+                        spellCheck={false}
+                      />
+                      <label htmlFor="llm-base-url">{t.providerBaseUrlEnv}</label>
+                      <input
+                        id="llm-base-url"
+                        value={providerBaseUrlDraft}
+                        onChange={(event) => setProviderBaseUrlDraft(event.target.value)}
+                        placeholder={provider.base_url_env}
+                        spellCheck={false}
+                      />
+                      <label htmlFor="llm-api-key">{t.providerApiKeyInput}</label>
+                      <input
+                        id="llm-api-key"
+                        value={providerApiKeyDraft}
+                        onChange={(event) => setProviderApiKeyDraft(event.target.value)}
+                        placeholder={t.providerApiKeyPlaceholder}
+                        type="password"
+                        spellCheck={false}
+                      />
+                      <dl>
+                        <div>
+                          <dt>{t.providerKeyEnv}</dt>
+                          <dd>{provider.api_key_env}</dd>
+                        </div>
+                      </dl>
+                    </>
                   ) : (
                     <p className="muted">{t.providerLocalOnly}</p>
                   )}
                 </div>
               ))}
-          </section>
+            <button type="submit" disabled={busy || !providerDraft}>
+              {t.saveProviderSettings}
+            </button>
+          </form>
         )}
 
         {window.deepReadingDesktop && (
