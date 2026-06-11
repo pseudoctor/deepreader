@@ -20,10 +20,12 @@ from .service import (
     check_feynman_summary,
     explain_selection,
     export_obsidian,
+    generate_active_recall,
     generate_selection_review_question,
     get_status,
     list_chapters,
     read_chapter,
+    save_active_recall_cards,
     save_book_argument_map,
     synthesize_chapter_window,
     update_reading_state,
@@ -89,6 +91,16 @@ class BookArgumentMapRequest(BaseModel):
 
 
 class SaveBookArgumentMapRequest(BaseModel):
+    workspace: Path
+    result: dict[str, object]
+
+
+class ActiveRecallRequest(BaseModel):
+    workspace: Path
+    chapter_id: str
+
+
+class SaveActiveRecallRequest(BaseModel):
     workspace: Path
     result: dict[str, object]
 
@@ -199,6 +211,16 @@ def book_argument_map(request: BookArgumentMapRequest) -> dict[str, object]:
 @app.post("/book-argument-map/save")
 def save_argument_map(request: SaveBookArgumentMapRequest) -> dict[str, str]:
     return save_book_argument_map(request.workspace, request.result)
+
+
+@app.post("/active-recall")
+def active_recall(request: ActiveRecallRequest) -> dict[str, object]:
+    return generate_active_recall(request.workspace, request.chapter_id)
+
+
+@app.post("/active-recall/save")
+def save_active_recall(request: SaveActiveRecallRequest) -> dict[str, str]:
+    return save_active_recall_cards(request.workspace, request.result)
 
 
 @app.post("/review-cards")

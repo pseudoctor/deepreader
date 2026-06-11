@@ -300,6 +300,42 @@ def test_save_book_argument_map_endpoint_appends_map(tmp_path: Path) -> None:
     assert "## Whole-Book Argument Map" in content
 
 
+def test_active_recall_endpoint_returns_chapter_questions(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/active-recall",
+        json={"workspace": str(workspace), "chapter_id": "ch01"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["chapter_id"] == "ch01"
+    assert len(data["questions"]) == 3
+    assert data["eligible_for_review"] is False
+
+
+def test_save_active_recall_endpoint_appends_review_cards(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+    result = client.post(
+        "/active-recall",
+        json={"workspace": str(workspace), "chapter_id": "ch01"},
+    ).json()
+
+    response = client.post(
+        "/active-recall/save",
+        json={"workspace": str(workspace), "result": result},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["kind"] == "active_recall_cards"
+    content = Path(data["path"]).read_text(encoding="utf-8")
+    assert "## Active Recall" in content
+
+
 def test_review_cards_endpoint_appends_card(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     client = TestClient(app)

@@ -315,6 +315,68 @@ def save_book_argument_map(workspace: Path, result: dict[str, object]) -> dict[s
     return {"kind": "book_argument_map", "path": str(path)}
 
 
+def generate_active_recall(workspace: Path, chapter_id: str) -> dict[str, object]:
+    metadata = load_metadata(workspace)
+    state = load_state(workspace)
+    chapter = get_chapter(workspace, chapter_id)
+    state_value = str(state.get("chapters", {}).get(chapter_id, "not-started"))
+    title = str(chapter["title"])
+    guide = build_reading_guide(chapter_id, title)
+    return {
+        "chapter_id": chapter_id,
+        "title": title,
+        "state": state_value,
+        "questions": [
+            {
+                "question": guide["recall_prompt"],
+                "answer_hint": (
+                    "Name the chapter's main claim, then add one concrete evidence item."
+                ),
+            },
+            {
+                "question": guide["core_question"],
+                "answer_hint": "State the problem in your own words before checking notes.",
+            },
+            {
+                "question": (
+                    f"How does {chapter_id}: {title} move the book's larger argument forward?"
+                ),
+                "answer_hint": (
+                    "Explain the link to the previous or next chapter, not just this chapter alone."
+                ),
+            },
+        ],
+        "eligible_for_review": state_value in {"done", "review"},
+        "chapter_count": len(metadata.get("chapters", [])),
+    }
+
+
+def save_active_recall_cards(workspace: Path, result: dict[str, object]) -> dict[str, str]:
+    ensure_workspace(workspace)
+    questions = result.get("questions", [])
+    if not isinstance(questions, list) or not questions:
+        raise ExtractionError("Active recall result has no questions")
+
+    path = workspace / "review_cards.md"
+    lines = [
+        "## Active Recall",
+        "",
+        f"**Chapter** {result.get('chapter_id')}: {result.get('title')}",
+        "",
+    ]
+    for item in questions:
+        if not isinstance(item, dict):
+            continue
+        lines.extend(
+            [
+                f"- Q: {item.get('question', '')}",
+                f"  A: {item.get('answer_hint', '')}",
+            ]
+        )
+    append_text(path, "\n".join(lines))
+    return {"kind": "active_recall_cards", "path": str(path)}
+
+
 def read_chapter(workspace: Path, chapter_id: str) -> dict[str, object]:
     chapter = get_chapter(workspace, chapter_id)
     return {

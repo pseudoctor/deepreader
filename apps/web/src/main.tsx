@@ -100,6 +100,20 @@ type BookArgumentMapResult = {
   rebuttals_and_limits: string[];
 };
 
+type ActiveRecallQuestion = {
+  question: string;
+  answer_hint: string;
+};
+
+type ActiveRecallResult = {
+  chapter_id: string;
+  title: string;
+  state: string;
+  questions: ActiveRecallQuestion[];
+  eligible_for_review: boolean;
+  chapter_count: number;
+};
+
 type SelectionToolbarPosition = {
   left: number;
   top: number;
@@ -221,6 +235,12 @@ const translations = {
     answer: "Answer",
     reviewAnswerPlaceholder: "Write the answer in your own words...",
     saveReviewCard: "Save review card",
+    activeRecall: "Active recall",
+    recallChapter: "Recall chapter",
+    generateRecall: "Generate recall",
+    saveAllRecallCards: "Save all recall cards",
+    recallNotCompleted: "This chapter is not marked done/review yet",
+    answerHint: "Answer hint",
     claim: "Claim",
     claimPlaceholder: "What claim does this passage support?",
     locator: "Locator",
@@ -244,6 +264,8 @@ const translations = {
     synthesisSaved: "Synthesis saved",
     bookMapReady: "Book map ready",
     bookMapSaved: "Book map saved",
+    activeRecallReady: "Active recall ready",
+    activeRecallSaved: "Active recall saved",
     quoteSaved: "Quote saved",
     obsidianExported: "Exported {count} Markdown files to {folder}",
     failedLoadWorkspace: "Failed to load workspace",
@@ -262,6 +284,8 @@ const translations = {
     failedSaveSynthesis: "Failed to save synthesis",
     failedBuildBookMap: "Failed to build book map",
     failedSaveBookMap: "Failed to save book map",
+    failedGenerateRecall: "Failed to generate active recall",
+    failedSaveRecall: "Failed to save active recall",
     failedSaveQuote: "Failed to save quote",
     failedObsidianExport: "Failed to export to Obsidian",
     requestFailed: "Request failed",
@@ -369,6 +393,12 @@ const translations = {
     answer: "答案",
     reviewAnswerPlaceholder: "用自己的话写下答案...",
     saveReviewCard: "保存复习卡",
+    activeRecall: "主动回忆",
+    recallChapter: "回忆章节",
+    generateRecall: "生成回忆题",
+    saveAllRecallCards: "保存全部回忆卡",
+    recallNotCompleted: "该章节尚未标记为已完成/复习",
+    answerHint: "答案提示",
     claim: "主张",
     claimPlaceholder: "这段内容支持了什么主张？",
     locator: "位置",
@@ -392,6 +422,8 @@ const translations = {
     synthesisSaved: "跨章节综合已保存",
     bookMapReady: "全书论证地图已生成",
     bookMapSaved: "全书论证地图已保存",
+    activeRecallReady: "主动回忆题已生成",
+    activeRecallSaved: "主动回忆卡已保存",
     quoteSaved: "摘录已保存",
     obsidianExported: "已导出 {count} 个 Markdown 文件到 {folder}",
     failedLoadWorkspace: "载入工作区失败",
@@ -410,6 +442,8 @@ const translations = {
     failedSaveSynthesis: "保存跨章节综合失败",
     failedBuildBookMap: "生成全书论证地图失败",
     failedSaveBookMap: "保存全书论证地图失败",
+    failedGenerateRecall: "生成主动回忆题失败",
+    failedSaveRecall: "保存主动回忆卡失败",
     failedSaveQuote: "保存摘录失败",
     failedObsidianExport: "导出到 Obsidian 失败",
     requestFailed: "请求失败",
@@ -539,6 +573,8 @@ function App() {
   const [noteText, setNoteText] = useState("");
   const [reviewQuestion, setReviewQuestion] = useState("");
   const [reviewAnswer, setReviewAnswer] = useState("");
+  const [recallChapterId, setRecallChapterId] = useState("");
+  const [activeRecallResult, setActiveRecallResult] = useState<ActiveRecallResult | null>(null);
   const [feynmanSummary, setFeynmanSummary] = useState("");
   const [feynmanResult, setFeynmanResult] = useState<FeynmanCheckResult | null>(null);
   const [synthesisStartChapterId, setSynthesisStartChapterId] = useState("");
@@ -602,6 +638,7 @@ function App() {
       setChapters(chapterResult.chapters);
       if (chapterResult.chapters.length > 0) {
         setSynthesisStartChapterId(chapterResult.chapters[0].id);
+        setRecallChapterId(chapterResult.chapters[0].id);
         await loadChapter(chapterResult.chapters[0].id, nextWorkspace);
       }
       setRecentWorkspaces((current) => [
@@ -858,6 +895,47 @@ function App() {
       setMessage(t.reviewCardSaved);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedSaveReviewCard);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function generateActiveRecall() {
+    if (!recallChapterId) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await apiRequest<ActiveRecallResult>("/active-recall", {
+        method: "POST",
+        body: JSON.stringify({
+          workspace,
+          chapter_id: recallChapterId,
+        }),
+      });
+      setActiveRecallResult(result);
+      setMessage(t.activeRecallReady);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedGenerateRecall);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveActiveRecallCards() {
+    if (!activeRecallResult) return;
+    setBusy(true);
+    setError("");
+    try {
+      await apiRequest("/active-recall/save", {
+        method: "POST",
+        body: JSON.stringify({
+          workspace,
+          result: activeRecallResult,
+        }),
+      });
+      setMessage(t.activeRecallSaved);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedSaveRecall);
     } finally {
       setBusy(false);
     }
@@ -1380,6 +1458,54 @@ function App() {
             >
               {t.saveReviewCard}
             </button>
+
+            <div className="panel-divider" />
+
+            <span className="eyebrow">{t.activeRecall}</span>
+            <label htmlFor="recall-chapter">{t.recallChapter}</label>
+            <select
+              id="recall-chapter"
+              value={recallChapterId}
+              onChange={(event) => {
+                setRecallChapterId(event.target.value);
+                setActiveRecallResult(null);
+              }}
+            >
+              {chapters.map((chapter) => (
+                <option key={chapter.id} value={chapter.id}>
+                  {chapter.id}: {chapter.title}
+                </option>
+              ))}
+            </select>
+
+            <button type="button" onClick={() => void generateActiveRecall()} disabled={busy}>
+              {t.generateRecall}
+            </button>
+
+            {activeRecallResult && (
+              <section className="feynman-result">
+                {!activeRecallResult.eligible_for_review && (
+                  <p className="muted">{t.recallNotCompleted}</p>
+                )}
+
+                {activeRecallResult.questions.map((item) => (
+                  <article key={item.question} className="recall-item">
+                    <h3>{item.question}</h3>
+                    <p>
+                      <strong>{t.answerHint}</strong> {item.answer_hint}
+                    </p>
+                  </article>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() => void saveActiveRecallCards()}
+                  disabled={busy}
+                >
+                  {t.saveAllRecallCards}
+                </button>
+              </section>
+            )}
           </form>
         )}
 

@@ -13,10 +13,12 @@ from deep_reading.service import (
     check_feynman_summary,
     explain_selection,
     export_obsidian,
+    generate_active_recall,
     generate_selection_review_question,
     get_status,
     list_chapters,
     read_chapter,
+    save_active_recall_cards,
     save_book_argument_map,
     synthesize_chapter_window,
     update_reading_state,
@@ -149,6 +151,31 @@ def test_save_book_argument_map_appends_to_argument_maps(tmp_path: Path) -> None
     assert "## Whole-Book Argument Map" in content
     assert "### Core Problem" in content
     assert "ch01: Intro" in content
+
+
+def test_generate_active_recall_returns_chapter_questions(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    result = generate_active_recall(workspace, "ch01")
+
+    assert result["chapter_id"] == "ch01"
+    assert result["title"] == "Intro"
+    assert len(result["questions"]) == 3
+    assert result["eligible_for_review"] is False
+    assert "main claim" in result["questions"][0]["answer_hint"]
+
+
+def test_save_active_recall_cards_appends_review_cards(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    result = generate_active_recall(workspace, "ch01")
+
+    saved = save_active_recall_cards(workspace, result)
+
+    assert saved["kind"] == "active_recall_cards"
+    content = Path(saved["path"]).read_text(encoding="utf-8")
+    assert "## Active Recall" in content
+    assert "**Chapter** ch01: Intro" in content
+    assert "After reading, explain" in content
 
 
 def test_check_feynman_summary_returns_structured_feedback(tmp_path: Path) -> None:
