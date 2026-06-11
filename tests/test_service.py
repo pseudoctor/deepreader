@@ -11,6 +11,7 @@ from deep_reading.service import (
     add_review_card,
     add_weak_concept,
     build_book_argument_map,
+    build_evidence_table,
     build_one_page_book_account,
     check_feynman_summary,
     explain_selection,
@@ -22,6 +23,7 @@ from deep_reading.service import (
     read_chapter,
     save_active_recall_cards,
     save_book_argument_map,
+    save_evidence_table,
     save_one_page_book_account,
     synthesize_chapter_window,
     update_reading_state,
@@ -258,6 +260,44 @@ def test_save_one_page_book_account_writes_markdown(tmp_path: Path) -> None:
     assert "# One-Page Book Account" in content
     assert "## Core Argument Chain" in content
     assert "## Application Prompts" in content
+
+
+def test_build_evidence_table_parses_evidence_cards(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    add_evidence_card(
+        workspace,
+        "The chapter frames comparison.",
+        "ch01: Intro",
+        "A source detail supports it.",
+        "High",
+        "It does not prove the whole book.",
+        "This may guide later chapters.",
+    )
+
+    result = build_evidence_table(workspace)
+
+    assert result["card_count"] == 1
+    card = result["cards"][0]
+    assert card["claim"] == "The chapter frames comparison."
+    assert card["source_locator"] == "ch01: Intro"
+    assert card["support"] == "A source detail supports it."
+    assert card["confidence"] == "High"
+    assert card["not_explicit"] == "It does not prove the whole book."
+    assert card["inference"] == "This may guide later chapters."
+
+
+def test_save_evidence_table_writes_markdown_table(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    add_evidence_card(workspace, "Claim", "ch01: Intro", "Support", "Medium")
+    result = build_evidence_table(workspace)
+
+    saved = save_evidence_table(workspace, result)
+
+    assert saved["kind"] == "evidence_table"
+    content = Path(saved["path"]).read_text(encoding="utf-8")
+    assert "# Evidence Table" in content
+    assert "| Claim | Source Locator | Support | Confidence | Not Explicit | Inference |" in content
+    assert "| Claim | ch01: Intro | Support | Medium | TBD | TBD |" in content
 
 
 def test_generate_active_recall_returns_chapter_questions(tmp_path: Path) -> None:

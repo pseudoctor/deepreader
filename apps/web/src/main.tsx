@@ -138,6 +138,20 @@ type OnePageBookAccountResult = {
   application_prompts: string[];
 };
 
+type EvidenceTableCard = {
+  claim: string;
+  source_locator: string;
+  support: string;
+  confidence: string;
+  not_explicit: string;
+  inference: string;
+};
+
+type EvidenceTableResult = {
+  card_count: number;
+  cards: EvidenceTableCard[];
+};
+
 type ActiveRecallQuestion = {
   question: string;
   answer_hint: string;
@@ -312,6 +326,14 @@ const translations = {
     buildOnePageAccount: "Build one-page account",
     saveOnePageAccount: "Save one-page account",
     onePageAccount: "One-page account",
+    buildEvidenceTable: "Build evidence table",
+    saveEvidenceTable: "Save evidence table",
+    evidenceTableReady: "Evidence table ready",
+    evidenceTableSaved: "Evidence table saved",
+    evidenceTable: "Evidence table",
+    sourceLocator: "Source locator",
+    notExplicitShort: "Not explicit",
+    inference: "Inference",
     strongestEvidence: "Strongest evidence",
     weakPoints: "Weak points",
     applicationPrompts: "Application prompts",
@@ -392,6 +414,8 @@ const translations = {
     failedSaveBookMap: "Failed to save book map",
     failedBuildOnePageAccount: "Failed to build one-page account",
     failedSaveOnePageAccount: "Failed to save one-page account",
+    failedBuildEvidenceTable: "Failed to build evidence table",
+    failedSaveEvidenceTable: "Failed to save evidence table",
     failedGenerateRecall: "Failed to generate active recall",
     failedSaveRecall: "Failed to save active recall",
     failedSaveQuote: "Failed to save quote",
@@ -521,6 +545,14 @@ const translations = {
     buildOnePageAccount: "生成一页书账",
     saveOnePageAccount: "保存一页书账",
     onePageAccount: "一页书账",
+    buildEvidenceTable: "生成证据表",
+    saveEvidenceTable: "保存证据表",
+    evidenceTableReady: "证据表已生成",
+    evidenceTableSaved: "证据表已保存",
+    evidenceTable: "证据表",
+    sourceLocator: "来源位置",
+    notExplicitShort: "未明说",
+    inference: "推论",
     strongestEvidence: "最强证据",
     weakPoints: "薄弱点",
     applicationPrompts: "应用提示",
@@ -601,6 +633,8 @@ const translations = {
     failedSaveBookMap: "保存全书论证地图失败",
     failedBuildOnePageAccount: "生成一页书账失败",
     failedSaveOnePageAccount: "保存一页书账失败",
+    failedBuildEvidenceTable: "生成证据表失败",
+    failedSaveEvidenceTable: "保存证据表失败",
     failedGenerateRecall: "生成主动回忆题失败",
     failedSaveRecall: "保存主动回忆卡失败",
     failedSaveQuote: "保存摘录失败",
@@ -744,6 +778,7 @@ function App() {
   const [bookArgumentMap, setBookArgumentMap] = useState<BookArgumentMapResult | null>(null);
   const [onePageBookAccount, setOnePageBookAccount] =
     useState<OnePageBookAccountResult | null>(null);
+  const [evidenceTable, setEvidenceTable] = useState<EvidenceTableResult | null>(null);
   const [evidenceClaim, setEvidenceClaim] = useState("");
   const [evidenceLocator, setEvidenceLocator] = useState("");
   const [evidenceSupport, setEvidenceSupport] = useState("");
@@ -1386,6 +1421,43 @@ function App() {
       setMessage(t.onePageAccountSaved);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedSaveOnePageAccount);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function buildEvidenceTable() {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await apiRequest<EvidenceTableResult>("/evidence-table", {
+        method: "POST",
+        body: JSON.stringify({ workspace }),
+      });
+      setEvidenceTable(result);
+      setMessage(t.evidenceTableReady);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedBuildEvidenceTable);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveEvidenceTable() {
+    if (!evidenceTable) return;
+    setBusy(true);
+    setError("");
+    try {
+      await apiRequest("/evidence-table/save", {
+        method: "POST",
+        body: JSON.stringify({
+          workspace,
+          result: evidenceTable,
+        }),
+      });
+      setMessage(t.evidenceTableSaved);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedSaveEvidenceTable);
     } finally {
       setBusy(false);
     }
@@ -2164,6 +2236,9 @@ function App() {
             >
               {t.buildOnePageAccount}
             </button>
+            <button type="button" onClick={() => void buildEvidenceTable()} disabled={busy}>
+              {t.buildEvidenceTable}
+            </button>
 
             {bookArgumentMap && (
               <section className="feynman-result">
@@ -2196,6 +2271,40 @@ function App() {
 
                 <button type="button" onClick={() => void saveBookMap()} disabled={busy}>
                   {t.saveBookMap}
+                </button>
+              </section>
+            )}
+
+            {evidenceTable && (
+              <section className="feynman-result">
+                <h3>{t.evidenceTable}</h3>
+                <p>
+                  {evidenceTable.card_count} {t.evidence}
+                </p>
+
+                {evidenceTable.cards.map((card) => (
+                  <article key={`${card.claim}-${card.source_locator}`} className="recall-item">
+                    <h3>{card.claim || t.claim}</h3>
+                    <p>
+                      <strong>{t.sourceLocator}</strong> {card.source_locator || "TBD"}
+                    </p>
+                    <p>
+                      <strong>{t.support}</strong> {card.support || "TBD"}
+                    </p>
+                    <p>
+                      <strong>{t.confidence}</strong> {card.confidence || "TBD"}
+                    </p>
+                    <p>
+                      <strong>{t.notExplicitShort}</strong> {card.not_explicit || "TBD"}
+                    </p>
+                    <p>
+                      <strong>{t.inference}</strong> {card.inference || "TBD"}
+                    </p>
+                  </article>
+                ))}
+
+                <button type="button" onClick={() => void saveEvidenceTable()} disabled={busy}>
+                  {t.saveEvidenceTable}
                 </button>
               </section>
             )}

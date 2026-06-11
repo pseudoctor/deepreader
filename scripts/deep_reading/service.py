@@ -569,6 +569,109 @@ def save_one_page_book_account(workspace: Path, result: dict[str, object]) -> di
     return {"kind": "one_page_book_account", "path": str(path)}
 
 
+def strip_markdown_label(line: str, label: str) -> str:
+    prefix = f"**{label}**"
+    return line.removeprefix(prefix).strip()
+
+
+def build_evidence_table(workspace: Path) -> dict[str, object]:
+    ensure_workspace(workspace)
+    content = read_text_if_exists(workspace / "evidence_cards.md")
+    cards: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+    pending_field: str | None = None
+
+    field_headings = {
+        "**Source Locator**": "source_locator",
+        "**Support**": "support",
+        "**Confidence**": "confidence",
+        "**Not Explicit / Needs Verification**": "not_explicit",
+        "**My Inference**": "inference",
+    }
+
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if line == "## Evidence Card":
+            if current:
+                cards.append(current)
+            current = {
+                "claim": "",
+                "source_locator": "",
+                "support": "",
+                "confidence": "",
+                "not_explicit": "",
+                "inference": "",
+            }
+            pending_field = None
+            continue
+        if current is None:
+            continue
+        if line.startswith("**Claim**"):
+            current["claim"] = strip_markdown_label(line, "Claim")
+            pending_field = None
+            continue
+        inline_matched = False
+        for heading, field in field_headings.items():
+            if line == heading:
+                pending_field = field
+                inline_matched = True
+                break
+            if line.startswith(heading):
+                current[field] = line.removeprefix(heading).strip()
+                pending_field = None
+                inline_matched = True
+                break
+        if inline_matched:
+            continue
+        if pending_field and line.startswith("- "):
+            current[pending_field] = line.removeprefix("- ").strip()
+
+    if current:
+        cards.append(current)
+
+    return {
+        "card_count": len(cards),
+        "cards": cards,
+    }
+
+
+def markdown_table_cell(value: object) -> str:
+    return str(value).replace("|", "\\|").replace("\n", " ").strip()
+
+
+def format_evidence_table(result: dict[str, object]) -> str:
+    cards = result["cards"]
+    assert isinstance(cards, list)
+    rows = [
+        "| Claim | Source Locator | Support | Confidence | Not Explicit | Inference |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for card in cards:
+        assert isinstance(card, dict)
+        rows.append(
+            "| "
+            + " | ".join(
+                [
+                    markdown_table_cell(card.get("claim", "")),
+                    markdown_table_cell(card.get("source_locator", "")),
+                    markdown_table_cell(card.get("support", "")),
+                    markdown_table_cell(card.get("confidence", "")),
+                    markdown_table_cell(card.get("not_explicit", "")),
+                    markdown_table_cell(card.get("inference", "")),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(["# Evidence Table", "", *rows])
+
+
+def save_evidence_table(workspace: Path, result: dict[str, object]) -> dict[str, str]:
+    ensure_workspace(workspace)
+    path = workspace / "evidence_table.md"
+    write(path, format_evidence_table(result) + "\n")
+    return {"kind": "evidence_table", "path": str(path)}
+
+
 def save_book_argument_map(workspace: Path, result: dict[str, object]) -> dict[str, str]:
     ensure_workspace(workspace)
     path = workspace / "argument_maps.md"

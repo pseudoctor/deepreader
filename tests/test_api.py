@@ -512,6 +512,59 @@ def test_review_cards_endpoint_appends_card(tmp_path: Path) -> None:
     assert "It frames the comparison problem." in content
 
 
+def test_evidence_table_endpoint_parses_saved_cards(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+    client.post(
+        "/evidence-cards",
+        json={
+            "workspace": str(workspace),
+            "claim": "The chapter frames comparison.",
+            "locator": "ch01: Intro",
+            "support": "A source detail supports it.",
+            "confidence": "High",
+            "not_explicit": "It does not prove the whole book.",
+            "inference": "This may guide later chapters.",
+        },
+    )
+
+    response = client.post("/evidence-table", json={"workspace": str(workspace)})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["card_count"] == 1
+    assert data["cards"][0]["claim"] == "The chapter frames comparison."
+    assert data["cards"][0]["source_locator"] == "ch01: Intro"
+
+
+def test_save_evidence_table_endpoint_writes_markdown(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+    client.post(
+        "/evidence-cards",
+        json={
+            "workspace": str(workspace),
+            "claim": "Claim",
+            "locator": "ch01: Intro",
+            "support": "Support",
+            "confidence": "Medium",
+        },
+    )
+    result = client.post("/evidence-table", json={"workspace": str(workspace)}).json()
+
+    response = client.post(
+        "/evidence-table/save",
+        json={"workspace": str(workspace), "result": result},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["kind"] == "evidence_table"
+    content = Path(data["path"]).read_text(encoding="utf-8")
+    assert "# Evidence Table" in content
+    assert "| Claim | ch01: Intro | Support | Medium | TBD | TBD |" in content
+
+
 def test_evidence_cards_endpoint_appends_card(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     client = TestClient(app)

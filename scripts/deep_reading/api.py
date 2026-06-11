@@ -19,6 +19,7 @@ from .service import (
     add_review_card,
     add_weak_concept,
     build_book_argument_map,
+    build_evidence_table,
     build_one_page_book_account,
     check_feynman_summary,
     explain_selection,
@@ -30,6 +31,7 @@ from .service import (
     read_chapter,
     save_active_recall_cards,
     save_book_argument_map,
+    save_evidence_table,
     save_one_page_book_account,
     synthesize_chapter_window,
     update_reading_state,
@@ -100,6 +102,11 @@ class SaveBookArgumentMapRequest(BaseModel):
 
 
 class SaveOnePageBookAccountRequest(BaseModel):
+    workspace: Path
+    result: dict[str, object]
+
+
+class SaveEvidenceTableRequest(BaseModel):
     workspace: Path
     result: dict[str, object]
 
@@ -288,6 +295,16 @@ def evidence_cards(request: EvidenceCardRequest) -> dict[str, str]:
         request.not_explicit,
         request.inference,
     )
+
+
+@app.post("/evidence-table")
+def evidence_table(request: BookArgumentMapRequest) -> dict[str, object]:
+    return build_evidence_table(request.workspace)
+
+
+@app.post("/evidence-table/save")
+def save_table(request: SaveEvidenceTableRequest) -> dict[str, str]:
+    return save_evidence_table(request.workspace, request.result)
 
 
 @app.post("/weak-concepts")
