@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .errors import ExtractionError
+from .llm import list_provider_status, set_configured_provider_name
 from .service import (
     add_evidence_card,
     add_note,
@@ -126,6 +127,10 @@ class ObsidianExportRequest(BaseModel):
     vault_folder: Path
 
 
+class LLMProviderRequest(BaseModel):
+    provider: str
+
+
 @app.exception_handler(ExtractionError)
 async def extraction_error_handler(request, exc: ExtractionError) -> JSONResponse:  # noqa: ANN001
     return JSONResponse(status_code=400, content={"error": str(exc)})
@@ -134,6 +139,20 @@ async def extraction_error_handler(request, exc: ExtractionError) -> JSONRespons
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/llm/providers")
+def llm_providers() -> dict[str, object]:
+    return list_provider_status()
+
+
+@app.post("/llm/providers")
+def update_llm_provider(request: LLMProviderRequest) -> dict[str, object]:
+    try:
+        set_configured_provider_name(request.provider)
+    except ValueError as exc:
+        raise ExtractionError(str(exc)) from exc
+    return list_provider_status()
 
 
 @app.get("/status")

@@ -123,7 +123,28 @@ type DeepReadingDesktopApi = {
   apiBaseUrl: string;
   platform: string;
   selectWorkspaceFolder: () => Promise<string | null>;
+  selectSourcePath: () => Promise<string | null>;
+  selectWorkspaceTargetFolder: () => Promise<string | null>;
+  createWorkspaceFromSource: (sourcePath: string, workspacePath: string) => Promise<string>;
   selectObsidianFolder: () => Promise<string | null>;
+};
+
+type LLMProviderStatus = {
+  name: string;
+  display_name: string;
+  configured: boolean;
+  api_key_env: string | null;
+  api_key_present: boolean;
+  base_url_env: string;
+  base_url: string | null;
+  model_env: string;
+  model: string;
+  selected_env: string;
+};
+
+type LLMProviderList = {
+  selected: string;
+  providers: LLMProviderStatus[];
 };
 
 declare global {
@@ -159,7 +180,27 @@ const translations = {
     appTitle: "Deep Reading",
     appSubtitle: "Workspace reader",
     language: "Language",
+    providerSettings: "AI provider",
+    provider: "Provider",
+    providerConfigured: "Configured",
+    providerNotConfigured: "Needs key",
+    providerKeyEnv: "API key",
+    providerModelEnv: "Model",
+    providerBaseUrlEnv: "Base URL",
+    providerSelectedEnv: "Selected by",
+    providerLocalOnly: "Local mock does not require a key",
+    providerSettingsSaved: "AI provider updated",
+    failedLoadProviders: "Failed to load AI providers",
+    failedUpdateProvider: "Failed to update AI provider",
     workspace: "Workspace",
+    newWorkspace: "New workspace",
+    sourcePath: "Source",
+    sourcePathPlaceholder: "/Users/me/Books/book.pdf",
+    selectSource: "Choose source",
+    workspaceTarget: "Save as",
+    workspaceTargetPlaceholder: "/Users/me/Reading/book-reading",
+    selectWorkspaceTarget: "Choose folder",
+    createWorkspace: "Create workspace",
     selectWorkspace: "Choose folder",
     load: "Load",
     recentWorkspaces: "Recent workspaces",
@@ -254,6 +295,7 @@ const translations = {
     saveEvidenceCard: "Save evidence card",
     working: "Working...",
     workspaceLoaded: "Workspace loaded",
+    workspaceCreated: "Workspace created",
     noteSaved: "Note saved",
     reviewCardSaved: "Review card saved",
     evidenceCardSaved: "Evidence card saved",
@@ -269,6 +311,9 @@ const translations = {
     quoteSaved: "Quote saved",
     obsidianExported: "Exported {count} Markdown files to {folder}",
     failedLoadWorkspace: "Failed to load workspace",
+    failedCreateWorkspace: "Failed to create workspace",
+    failedSelectSource: "Failed to choose source",
+    failedSelectWorkspaceTarget: "Failed to choose workspace folder",
     failedLoadChapter: "Failed to load chapter",
     failedSelectWorkspace: "Failed to choose workspace folder",
     failedSelectObsidianFolder: "Failed to choose Obsidian folder",
@@ -317,7 +362,27 @@ const translations = {
     appTitle: "深度阅读",
     appSubtitle: "工作区阅读器",
     language: "语言",
+    providerSettings: "AI 接口",
+    provider: "供应商",
+    providerConfigured: "已配置",
+    providerNotConfigured: "需要 key",
+    providerKeyEnv: "API key",
+    providerModelEnv: "模型",
+    providerBaseUrlEnv: "Base URL",
+    providerSelectedEnv: "当前选择",
+    providerLocalOnly: "本地 mock 不需要 key",
+    providerSettingsSaved: "AI 接口已更新",
+    failedLoadProviders: "载入 AI 接口失败",
+    failedUpdateProvider: "更新 AI 接口失败",
     workspace: "工作区",
+    newWorkspace: "新建工作区",
+    sourcePath: "源文件",
+    sourcePathPlaceholder: "/Users/me/Books/book.pdf",
+    selectSource: "选择源文件",
+    workspaceTarget: "保存为",
+    workspaceTargetPlaceholder: "/Users/me/Reading/book-reading",
+    selectWorkspaceTarget: "选择文件夹",
+    createWorkspace: "创建工作区",
     selectWorkspace: "选择文件夹",
     load: "载入",
     recentWorkspaces: "最近工作区",
@@ -412,6 +477,7 @@ const translations = {
     saveEvidenceCard: "保存证据卡",
     working: "处理中...",
     workspaceLoaded: "工作区已载入",
+    workspaceCreated: "工作区已创建",
     noteSaved: "笔记已保存",
     reviewCardSaved: "复习卡已保存",
     evidenceCardSaved: "证据卡已保存",
@@ -427,6 +493,9 @@ const translations = {
     quoteSaved: "摘录已保存",
     obsidianExported: "已导出 {count} 个 Markdown 文件到 {folder}",
     failedLoadWorkspace: "载入工作区失败",
+    failedCreateWorkspace: "创建工作区失败",
+    failedSelectSource: "选择源文件失败",
+    failedSelectWorkspaceTarget: "选择工作区文件夹失败",
     failedLoadChapter: "载入章节失败",
     failedSelectWorkspace: "选择工作区文件夹失败",
     failedSelectObsidianFolder: "选择 Obsidian 文件夹失败",
@@ -592,6 +661,9 @@ function App() {
     useState<SelectionToolbarPosition | null>(null);
   const [obsidianFolder, setObsidianFolder] = useState(getInitialObsidianFolder);
   const [recentWorkspaces, setRecentWorkspaces] = useState<string[]>(getInitialRecentWorkspaces);
+  const [llmProviders, setLlmProviders] = useState<LLMProviderList | null>(null);
+  const [sourcePath, setSourcePath] = useState("");
+  const [workspaceTarget, setWorkspaceTarget] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -611,6 +683,10 @@ function App() {
       JSON.stringify(recentWorkspaces),
     );
   }, [recentWorkspaces]);
+
+  useEffect(() => {
+    void loadLLMProviders();
+  }, []);
 
   const progressText = useMemo(() => {
     if (!status) return t.noWorkspaceLoaded;
@@ -653,6 +729,33 @@ function App() {
     }
   }
 
+  async function loadLLMProviders() {
+    try {
+      const result = await apiRequest<LLMProviderList>("/llm/providers");
+      setLlmProviders(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedLoadProviders);
+    }
+  }
+
+  async function updateLLMProvider(nextProvider: string) {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await apiRequest<LLMProviderList>("/llm/providers", {
+        method: "POST",
+        body: JSON.stringify({ provider: nextProvider }),
+      });
+      setLlmProviders(result);
+      setMessage(t.providerSettingsSaved);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedUpdateProvider);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function selectWorkspaceFolder() {
     if (!window.deepReadingDesktop) return;
     setBusy(true);
@@ -665,6 +768,59 @@ function App() {
       await loadWorkspace(selectedWorkspace);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedSelectWorkspace);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function selectSourcePath() {
+    if (!window.deepReadingDesktop) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const selectedSource = await window.deepReadingDesktop.selectSourcePath();
+      if (!selectedSource) return;
+      setSourcePath(selectedSource);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedSelectSource);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function selectWorkspaceTargetFolder() {
+    if (!window.deepReadingDesktop) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const selectedTarget = await window.deepReadingDesktop.selectWorkspaceTargetFolder();
+      if (!selectedTarget) return;
+      setWorkspaceTarget(selectedTarget);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedSelectWorkspaceTarget);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createWorkspace(event: FormEvent) {
+    event.preventDefault();
+    if (!window.deepReadingDesktop || !sourcePath.trim() || !workspaceTarget.trim()) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const createdWorkspace = await window.deepReadingDesktop.createWorkspaceFromSource(
+        sourcePath.trim(),
+        workspaceTarget.trim(),
+      );
+      setWorkspace(createdWorkspace);
+      await loadWorkspace(createdWorkspace);
+      setMessage(t.workspaceCreated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedCreateWorkspace);
     } finally {
       setBusy(false);
     }
@@ -1153,6 +1309,105 @@ function App() {
             </button>
           ))}
         </div>
+
+        {llmProviders && (
+          <section className="provider-settings">
+            <span className="eyebrow">{t.providerSettings}</span>
+            <label htmlFor="llm-provider">{t.provider}</label>
+            <select
+              id="llm-provider"
+              value={llmProviders.selected}
+              onChange={(event) => void updateLLMProvider(event.target.value)}
+              disabled={busy}
+            >
+              {llmProviders.providers.map((provider) => (
+                <option key={provider.name} value={provider.name}>
+                  {provider.display_name}
+                </option>
+              ))}
+            </select>
+
+            {llmProviders.providers
+              .filter((provider) => provider.name === llmProviders.selected)
+              .map((provider) => (
+                <div className="provider-details" key={provider.name}>
+                  <p className={provider.configured ? "success" : "muted"}>
+                    {provider.configured ? t.providerConfigured : t.providerNotConfigured}
+                  </p>
+                  {provider.api_key_env ? (
+                    <dl>
+                      <div>
+                        <dt>{t.providerKeyEnv}</dt>
+                        <dd>{provider.api_key_env}</dd>
+                      </div>
+                      <div>
+                        <dt>{t.providerModelEnv}</dt>
+                        <dd>
+                          {provider.model_env} = {provider.model}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{t.providerBaseUrlEnv}</dt>
+                        <dd>
+                          {provider.base_url_env} = {provider.base_url}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{t.providerSelectedEnv}</dt>
+                        <dd>{provider.selected_env}</dd>
+                      </div>
+                    </dl>
+                  ) : (
+                    <p className="muted">{t.providerLocalOnly}</p>
+                  )}
+                </div>
+              ))}
+          </section>
+        )}
+
+        {window.deepReadingDesktop && (
+          <form className="create-workspace-form" onSubmit={createWorkspace}>
+            <span className="eyebrow">{t.newWorkspace}</span>
+            <label htmlFor="source-path">{t.sourcePath}</label>
+            <div className="path-picker-row">
+              <input
+                id="source-path"
+                value={sourcePath}
+                onChange={(event) => setSourcePath(event.target.value)}
+                placeholder={t.sourcePathPlaceholder}
+                spellCheck={false}
+              />
+              <button type="button" onClick={() => void selectSourcePath()} disabled={busy}>
+                {t.selectSource}
+              </button>
+            </div>
+
+            <label htmlFor="workspace-target">{t.workspaceTarget}</label>
+            <div className="path-picker-row">
+              <input
+                id="workspace-target"
+                value={workspaceTarget}
+                onChange={(event) => setWorkspaceTarget(event.target.value)}
+                placeholder={t.workspaceTargetPlaceholder}
+                spellCheck={false}
+              />
+              <button
+                type="button"
+                onClick={() => void selectWorkspaceTargetFolder()}
+                disabled={busy}
+              >
+                {t.selectWorkspaceTarget}
+              </button>
+            </div>
+
+            <button
+              type="submit"
+              disabled={busy || !sourcePath.trim() || !workspaceTarget.trim()}
+            >
+              {t.createWorkspace}
+            </button>
+          </form>
+        )}
 
         <form
           className="workspace-form"

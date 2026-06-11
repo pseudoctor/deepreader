@@ -90,14 +90,26 @@ button:disabled {
 }
 
 .workspace-form,
+.create-workspace-form,
 .export-form,
 .recent-workspaces,
+.provider-settings,
 .status-block,
 .continue-reading {
   border-bottom: 1px solid #cfd8d0;
   display: grid;
   gap: 8px;
   padding: 16px;
+}
+
+.path-picker-row {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.path-picker-row button {
+  min-width: 0;
 }
 
 .recent-workspaces p {
@@ -144,6 +156,42 @@ button:disabled {
   background: #214d45;
   border-color: #214d45;
   color: #fffefa;
+}
+
+.provider-settings {
+  background: #eef2ed;
+}
+
+.provider-details {
+  display: grid;
+  gap: 8px;
+}
+
+.provider-details dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.provider-details div {
+  display: grid;
+  gap: 2px;
+}
+
+.provider-details dt {
+  color: #53625d;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.provider-details dd {
+  color: #1d2525;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 label,

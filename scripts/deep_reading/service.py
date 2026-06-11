@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 from .errors import ExtractionError
+from .llm import build_provider
 from .notes import append_text, append_to_section, chapter_note_path, ensure_workspace
 from .obsidian import export_obsidian_files
 from .reader import get_chapter, get_chapter_text, load_metadata
@@ -15,28 +15,6 @@ from .workspace import write
 
 ALLOWED_STATES = {"not-started", "reading", "done", "review"}
 ALLOWED_NOTE_TYPES = {"Quote", "My Thought", "AI Explanation", "Question"}
-CAUSAL_MARKERS = (
-    "because",
-    "therefore",
-    "so",
-    "since",
-    "leads to",
-    "causes",
-    "因",
-    "所以",
-    "导致",
-)
-EVIDENCE_MARKERS = (
-    "evidence",
-    "example",
-    "for example",
-    "according",
-    "quote",
-    "原文",
-    "证据",
-    "例如",
-)
-VAGUE_MARKERS = ("things", "stuff", "important", "interesting", "很多", "一些", "重要", "有趣")
 
 
 def chapter_summary(chapter: dict[str, object], state_value: str) -> dict[str, object]:
@@ -388,115 +366,20 @@ def read_chapter(workspace: Path, chapter_id: str) -> dict[str, object]:
     }
 
 
-def split_summary_sentences(summary: str) -> list[str]:
-    normalized = summary.replace("。", ".").replace("？", "?").replace("！", "!")
-    sentences = []
-    for chunk in normalized.replace("?", ".").replace("!", ".").split("."):
-        sentence = chunk.strip()
-        if sentence:
-            sentences.append(sentence)
-    return sentences
-
-
-def contains_marker(text: str, marker: str) -> bool:
-    if marker.isascii():
-        return re.search(rf"\b{re.escape(marker)}\b", text) is not None
-    return marker in text
-
-
-def contains_cjk(text: str) -> bool:
-    return any("\u4e00" <= char <= "\u9fff" for char in text)
-
-
 def check_feynman_summary(workspace: Path, chapter_id: str, summary: str) -> dict[str, object]:
     chapter = get_chapter(workspace, chapter_id)
-    stripped = summary.strip()
-    if not stripped:
-        raise ExtractionError("Summary cannot be empty")
-
-    lowered = stripped.casefold()
-    sentences = split_summary_sentences(stripped)
-    accurate_points = [
-        sentence
-        for sentence in sentences
-        if len(sentence) >= 40
-        and not any(contains_marker(sentence.casefold(), marker) for marker in VAGUE_MARKERS)
-    ]
-    vague_points = [
-        sentence
-        for sentence in sentences
-        if len(sentence) < 40
-        or any(contains_marker(sentence.casefold(), marker) for marker in VAGUE_MARKERS)
-    ]
-    missing_causal_links = []
-    if not any(contains_marker(lowered, marker) for marker in CAUSAL_MARKERS):
-        missing_causal_links.append(
-            "The summary does not clearly explain the causal link or mechanism."
-        )
-
-    unsupported_leaps = []
-    if not any(contains_marker(lowered, marker) for marker in EVIDENCE_MARKERS):
-        unsupported_leaps.append("The summary does not name a concrete example or evidence.")
-
-    rewritten_version = (
-        f"In {chapter['id']}: {chapter['title']}, the chapter appears to argue that "
-        f"{sentences[0] if sentences else stripped}. To make the explanation stronger, add the "
-        "causal mechanism and one concrete piece of evidence from the text."
-    )
-    return {
-        "chapter_id": chapter["id"],
-        "title": chapter["title"],
-        "accurate_points": accurate_points,
-        "vague_points": vague_points,
-        "missing_causal_links": missing_causal_links,
-        "unsupported_leaps": unsupported_leaps,
-        "rewritten_version": rewritten_version,
-    }
+    try:
+        return build_provider().check_feynman_summary(chapter, summary)
+    except (RuntimeError, ValueError) as exc:
+        raise ExtractionError(str(exc)) from exc
 
 
 def explain_selection(workspace: Path, chapter_id: str, selected_text: str) -> dict[str, str]:
     chapter = get_chapter(workspace, chapter_id)
-    text = selected_text.strip()
-    if not text:
-        raise ExtractionError("Selected text cannot be empty")
-
-    if contains_cjk(text):
-        explanation = "\n".join(
-            [
-                f"选中文段来自 {chapter['id']}: {chapter['title']}",
-                "",
-                "它在说什么：",
-                text,
-                "",
-                "怎么读这段：",
-                (
-                    "先判断这段支持了什么主张，再找它给出的证据，以及暗含的因果链。"
-                    "如果它在做比较，就追问：被比较对象之间变了什么，什么又保持不变。"
-                ),
-            ]
-        )
-    else:
-        explanation = "\n".join(
-            [
-                f"Selected passage from {chapter['id']}: {chapter['title']}",
-                "",
-                "What it says:",
-                text,
-                "",
-                "How to read it:",
-                (
-                    "Identify the claim this passage supports, the evidence it names, and any "
-                    "causal link it implies. If the passage uses a comparison, ask what changed "
-                    "between the compared cases and what stays constant."
-                ),
-            ]
-        )
-
-    return {
-        "chapter_id": chapter["id"],
-        "title": chapter["title"],
-        "explanation": explanation,
-    }
+    try:
+        return build_provider().explain_selection(chapter, selected_text)
+    except (RuntimeError, ValueError) as exc:
+        raise ExtractionError(str(exc)) from exc
 
 
 def generate_selection_review_question(
@@ -505,32 +388,10 @@ def generate_selection_review_question(
     selected_text: str,
 ) -> dict[str, str]:
     chapter = get_chapter(workspace, chapter_id)
-    text = selected_text.strip()
-    if not text:
-        raise ExtractionError("Selected text cannot be empty")
-
-    preview = text if len(text) <= 180 else text[:177].rstrip() + "..."
-    if contains_cjk(text):
-        return {
-            "chapter_id": chapter["id"],
-            "title": chapter["title"],
-            "question": f"这段文字在 {chapter['id']} 中支持了什么主张或因果链？",
-            "answer": (
-                f"可用这段作为证据：{preview}\n\n"
-                "一个好的回答需要说清楚主张、解释因果链，并指出这段本身还不能证明什么。"
-            ),
-        }
-
-    return {
-        "chapter_id": chapter["id"],
-        "title": chapter["title"],
-        "question": f"What claim or causal link does this passage support in {chapter['id']}?",
-        "answer": (
-            f"Use this passage as evidence: {preview}\n\n"
-            "A strong answer should name the claim, explain the causal link, and state what "
-            "the passage does not prove by itself."
-        ),
-    }
+    try:
+        return build_provider().generate_selection_review_question(chapter, selected_text)
+    except (RuntimeError, ValueError) as exc:
+        raise ExtractionError(str(exc)) from exc
 
 
 def update_reading_state(workspace: Path, chapter_id: str, state_value: str) -> dict[str, str]:

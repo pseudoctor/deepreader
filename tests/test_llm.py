@@ -1,0 +1,390 @@
+import json
+import os
+from io import BytesIO
+from urllib.error import HTTPError
+
+import pytest
+from deep_reading.llm import (
+    build_provider,
+    configured_provider_name,
+    list_provider_status,
+    set_configured_provider_name,
+)
+
+
+class FakeResponse:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self.payload = payload
+
+    def __enter__(self) -> "FakeResponse":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return json.dumps(self.payload).encode("utf-8")
+
+
+def test_list_provider_status_includes_reserved_providers(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DEEP_READING_LLM_PROVIDER", raising=False)
+
+    status = list_provider_status()
+
+    assert status["selected"] == "mock"
+    providers = {item["name"]: item for item in status["providers"]}
+    assert set(providers) == {"mock", "openai", "claude", "gemini", "deepseek", "qwen"}
+    assert providers["mock"]["configured"] is True
+    assert providers["openai"]["api_key_env"] == "OPENAI_API_KEY"
+    assert providers["claude"]["api_key_env"] == "ANTHROPIC_API_KEY"
+    assert providers["gemini"]["api_key_env"] == "GEMINI_API_KEY"
+    assert providers["deepseek"]["api_key_env"] == "DEEPSEEK_API_KEY"
+    assert providers["qwen"]["api_key_env"] == "QWEN_API_KEY"
+
+
+def test_provider_status_detects_api_key_without_exposing_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-value")
+
+    status = list_provider_status()
+
+    openai = next(item for item in status["providers"] if item["name"] == "openai")
+    assert openai["configured"] is True
+    assert openai["api_key_present"] is True
+    assert "secret-value" not in str(openai)
+
+
+def test_configured_provider_falls_back_to_mock_for_unknown_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEEP_READING_LLM_PROVIDER", "unknown")
+
+    assert configured_provider_name() == "mock"
+
+
+def test_provider_requires_configured_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("QWEN_API_KEY", raising=False)
+    provider = build_provider("qwen")
+
+    with pytest.raises(RuntimeError, match="QWEN_API_KEY"):
+        provider.complete_json("prompt", "schema")
+
+
+def test_set_configured_provider_name_updates_runtime_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DEEP_READING_LLM_PROVIDER", raising=False)
+
+    try:
+        selected = set_configured_provider_name("claude")
+
+        assert selected == "claude"
+        assert configured_provider_name() == "claude"
+    finally:
+        os.environ["DEEP_READING_LLM_PROVIDER"] = "mock"
+
+
+def test_mock_provider_runs_feynman_check() -> None:
+    provider = build_provider("mock")
+
+    result = provider.check_feynman_summary(
+        {"id": "ch01", "title": "Intro"},
+        "The chapter says many important things. It compares societies.",
+    )
+
+    assert result["chapter_id"] == "ch01"
+    assert result["vague_points"]
+    assert result["missing_causal_links"]
+    assert result["unsupported_leaps"]
+
+
+def test_mock_provider_explains_selection() -> None:
+    provider = build_provider("mock")
+
+    result = provider.explain_selection(
+        {"id": "ch01", "title": "Intro"},
+        "This is a short sample.",
+    )
+
+    assert result["chapter_id"] == "ch01"
+    assert "How to read it:" in result["explanation"]
+
+
+def test_mock_provider_generates_selection_review_question() -> None:
+    provider = build_provider("mock")
+
+    result = provider.generate_selection_review_question(
+        {"id": "ch01", "title": "Intro"},
+        "This is a short sample.",
+    )
+
+    assert result["chapter_id"] == "ch01"
+    assert "What claim or causal link" in result["question"]
+
+
+def test_openai_provider_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    provider = build_provider("openai")
+
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+        provider.check_feynman_summary({"id": "ch01", "title": "Intro"}, "summary")
+
+
+def test_openai_provider_posts_structured_responses_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(req: object, timeout: int) -> FakeResponse:
+        captured["url"] = req.full_url  # type: ignore[attr-defined]
+        captured["headers"] = dict(req.header_items())  # type: ignore[attr-defined]
+        captured["body"] = json.loads(req.data.decode("utf-8"))  # type: ignore[attr-defined]
+        captured["timeout"] = timeout
+        return FakeResponse(
+            {
+                "output_text": json.dumps(
+                    {
+                        "accurate_points": ["Names a causal mechanism."],
+                        "vague_points": [],
+                        "missing_causal_links": [],
+                        "unsupported_leaps": [],
+                        "rewritten_version": "A clearer version.",
+                    }
+                )
+            }
+        )
+
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-value")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-test")
+    monkeypatch.setenv("DEEP_READING_OPENAI_BASE_URL", "https://example.test/v1/")
+    monkeypatch.setattr("deep_reading.llm.request.urlopen", fake_urlopen)
+
+    provider = build_provider("openai")
+    result = provider.check_feynman_summary(
+        {"id": "ch01", "title": "Intro"},
+        "The chapter explains the claim because it cites evidence.",
+    )
+
+    body = captured["body"]
+    headers = captured["headers"]
+    assert result["chapter_id"] == "ch01"
+    assert result["title"] == "Intro"
+    assert result["rewritten_version"] == "A clearer version."
+    assert captured["url"] == "https://example.test/v1/responses"
+    assert captured["timeout"] == 60
+    assert body["model"] == "gpt-test"  # type: ignore[index]
+    assert body["text"]["format"]["type"] == "json_schema"  # type: ignore[index]
+    assert body["text"]["format"]["strict"] is True  # type: ignore[index]
+    assert headers["Authorization"].endswith("secret-value")  # type: ignore[index]
+    assert "secret-value" not in json.dumps(body)
+
+
+def test_openai_provider_parses_output_content_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_urlopen(_req: object, timeout: int) -> FakeResponse:
+        assert timeout == 60
+        return FakeResponse(
+            {
+                "output": [
+                    {
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": json.dumps(
+                                    {
+                                        "question": "What is the claim?",
+                                        "answer": "The passage supports the main claim.",
+                                    }
+                                ),
+                            }
+                        ]
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-value")
+    monkeypatch.setattr("deep_reading.llm.request.urlopen", fake_urlopen)
+
+    provider = build_provider("openai")
+    result = provider.generate_selection_review_question(
+        {"id": "ch01", "title": "Intro"},
+        "This passage supports a claim with evidence.",
+    )
+
+    assert result["chapter_id"] == "ch01"
+    assert result["question"] == "What is the claim?"
+
+
+def test_openai_provider_reports_http_error_without_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_urlopen(_req: object, timeout: int) -> FakeResponse:
+        assert timeout == 60
+        raise HTTPError(
+            url="https://example.test/v1/responses",
+            code=400,
+            msg="Bad Request",
+            hdrs={},
+            fp=BytesIO(b'{"error":{"message":"Invalid model"}}'),
+        )
+
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-value")
+    monkeypatch.setattr("deep_reading.llm.request.urlopen", fake_urlopen)
+
+    provider = build_provider("openai")
+    with pytest.raises(RuntimeError) as excinfo:
+        provider.explain_selection({"id": "ch01", "title": "Intro"}, "Selected text.")
+
+    message = str(excinfo.value)
+    assert "status 400" in message
+    assert "Invalid model" in message
+    assert "secret-value" not in message
+
+
+def test_claude_provider_uses_messages_tool_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(req: object, timeout: int) -> FakeResponse:
+        assert timeout == 60
+        captured["url"] = req.full_url  # type: ignore[attr-defined]
+        captured["headers"] = dict(req.header_items())  # type: ignore[attr-defined]
+        captured["body"] = json.loads(req.data.decode("utf-8"))  # type: ignore[attr-defined]
+        return FakeResponse(
+            {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "return_json",
+                        "input": {"explanation": "A concise explanation."},
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "secret-value")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-test")
+    monkeypatch.setenv("DEEP_READING_CLAUDE_BASE_URL", "https://claude.test/v1")
+    monkeypatch.setattr("deep_reading.llm.request.urlopen", fake_urlopen)
+
+    provider = build_provider("claude")
+    result = provider.explain_selection({"id": "ch01", "title": "Intro"}, "Selected text.")
+
+    body = captured["body"]
+    headers = captured["headers"]
+    assert result["explanation"] == "A concise explanation."
+    assert captured["url"] == "https://claude.test/v1/messages"
+    assert body["model"] == "claude-test"  # type: ignore[index]
+    assert body["tool_choice"]["name"] == "return_json"  # type: ignore[index]
+    assert body["tools"][0]["input_schema"]["required"] == ["explanation"]  # type: ignore[index]
+    assert headers["X-api-key"] == "secret-value"  # type: ignore[index]
+    assert "secret-value" not in json.dumps(body)
+
+
+def test_gemini_provider_uses_generate_content_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(req: object, timeout: int) -> FakeResponse:
+        assert timeout == 60
+        captured["url"] = req.full_url  # type: ignore[attr-defined]
+        captured["headers"] = dict(req.header_items())  # type: ignore[attr-defined]
+        captured["body"] = json.loads(req.data.decode("utf-8"))  # type: ignore[attr-defined]
+        return FakeResponse(
+            {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {
+                                    "text": json.dumps(
+                                        {
+                                            "question": "What changed?",
+                                            "answer": "The evidence changed.",
+                                        }
+                                    )
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setenv("GEMINI_API_KEY", "secret-value")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-test")
+    monkeypatch.setenv("DEEP_READING_GEMINI_BASE_URL", "https://gemini.test/v1beta")
+    monkeypatch.setattr("deep_reading.llm.request.urlopen", fake_urlopen)
+
+    provider = build_provider("gemini")
+    result = provider.generate_selection_review_question(
+        {"id": "ch01", "title": "Intro"},
+        "Selected text.",
+    )
+
+    body = captured["body"]
+    assert result["question"] == "What changed?"
+    assert captured["url"] == "https://gemini.test/v1beta/models/gemini-test:generateContent"
+    assert body["generationConfig"]["response_mime_type"] == "application/json"  # type: ignore[index]
+    assert body["generationConfig"]["response_json_schema"]["required"] == [  # type: ignore[index]
+        "question",
+        "answer",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("provider_name", "api_key_env", "base_url_env", "expected_url"),
+    [
+        ("deepseek", "DEEPSEEK_API_KEY", "DEEP_READING_DEEPSEEK_BASE_URL", "https://deepseek.test/chat/completions"),
+        ("qwen", "QWEN_API_KEY", "DEEP_READING_QWEN_BASE_URL", "https://qwen.test/chat/completions"),
+    ],
+)
+def test_openai_compatible_provider_uses_chat_completions(
+    monkeypatch: pytest.MonkeyPatch,
+    provider_name: str,
+    api_key_env: str,
+    base_url_env: str,
+    expected_url: str,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(req: object, timeout: int) -> FakeResponse:
+        assert timeout == 60
+        captured["url"] = req.full_url  # type: ignore[attr-defined]
+        captured["body"] = json.loads(req.data.decode("utf-8"))  # type: ignore[attr-defined]
+        return FakeResponse(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "accurate_points": ["Accurate"],
+                                    "vague_points": [],
+                                    "missing_causal_links": [],
+                                    "unsupported_leaps": [],
+                                    "rewritten_version": "Clearer.",
+                                }
+                            )
+                        }
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setenv(api_key_env, "secret-value")
+    monkeypatch.setenv(base_url_env, expected_url.removesuffix("/chat/completions"))
+    monkeypatch.setattr("deep_reading.llm.request.urlopen", fake_urlopen)
+
+    provider = build_provider(provider_name)
+    result = provider.check_feynman_summary({"id": "ch01", "title": "Intro"}, "Summary.")
+
+    body = captured["body"]
+    assert result["rewritten_version"] == "Clearer."
+    assert captured["url"] == expected_url
+    assert body["response_format"] == {"type": "json_object"}  # type: ignore[index]
+    assert "feynman_check" in json.dumps(body)

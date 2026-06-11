@@ -1,16 +1,83 @@
 {
   "name": "deep-reading-desktop",
   "version": "0.1.0",
+  "description": "A local-first deep reading coach for serious readers.",
+  "author": "pseudoctor <github@solo-digitalpass.eu.org>",
   "private": true,
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "icon:mac": "node scripts/build-icon.mjs",
+    "signing:check": "node scripts/check-mac-signing-env.mjs",
     "dev": "npm run build && node scripts/launch-dev.mjs",
-    "start": "npm run build && electron dist/main.js"
+    "start": "npm run build && electron dist/main.js",
+    "package:mac": "npm run icon:mac && electron-builder --mac --dir",
+    "dist:mac": "npm run icon:mac && electron-builder --mac"
+  },
+  "build": {
+    "appId": "org.pseudoctor.deep-reading",
+    "productName": "Deep Reading",
+    "directories": {
+      "output": "release"
+    },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../web/dist",
+        "to": "web/dist"
+      },
+      {
+        "from": "../../scripts",
+        "to": "scripts"
+      },
+      {
+        "from": "../../.venv/lib",
+        "to": "python/lib"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.education",
+      "icon": "assets/icon.icns",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "gatekeeperAssess": false,
+      "notarize": true,
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "dmg": {
+      "title": "Deep Reading ${version}",
+      "backgroundColor": "#f3f1eb",
+      "window": {
+        "width": 560,
+        "height": 360
+      },
+      "contents": [
+        {
+          "x": 180,
+          "y": 170,
+          "type": "file"
+        },
+        {
+          "x": 390,
+          "y": 170,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "electron": "^39.0.0",
+    "electron-builder": "^26.15.2",
     "typescript": "^5.9.0"
   }
 }

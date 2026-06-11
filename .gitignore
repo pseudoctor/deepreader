@@ -8,6 +8,7 @@ workspaces/
 node_modules/
 apps/web/dist/
 apps/desktop/dist/
+apps/desktop/release/
 apps/desktop/node_modules/
 *.tsbuildinfo
 apps/web/vite.config.js

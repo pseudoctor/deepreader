@@ -202,6 +202,18 @@ def test_check_feynman_summary_rejects_empty_summary(tmp_path: Path) -> None:
         check_feynman_summary(workspace, "ch01", " ")
 
 
+def test_coach_action_reports_reserved_provider_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = make_workspace(tmp_path)
+    monkeypatch.setenv("DEEP_READING_LLM_PROVIDER", "openai")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    with pytest.raises(ExtractionError, match="OPENAI_API_KEY"):
+        check_feynman_summary(workspace, "ch01", "A short summary.")
+
+
 def test_explain_selection_returns_note_ready_text(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
 

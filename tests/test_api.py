@@ -1,5 +1,7 @@
+import os
 from pathlib import Path
 
+import pytest
 from deep_reading.api import app
 from deep_reading.cli import main
 from fastapi.testclient import TestClient
@@ -26,6 +28,49 @@ def test_health_endpoint() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_llm_providers_endpoint_returns_reserved_provider_status() -> None:
+    client = TestClient(app)
+
+    response = client.get("/llm/providers")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["selected"] == "mock"
+    providers = {item["name"]: item for item in data["providers"]}
+    assert set(providers) == {"mock", "openai", "claude", "gemini", "deepseek", "qwen"}
+    assert providers["openai"]["api_key_env"] == "OPENAI_API_KEY"
+    assert providers["claude"]["api_key_env"] == "ANTHROPIC_API_KEY"
+    assert providers["gemini"]["api_key_env"] == "GEMINI_API_KEY"
+    assert providers["deepseek"]["api_key_env"] == "DEEPSEEK_API_KEY"
+    assert providers["qwen"]["api_key_env"] == "QWEN_API_KEY"
+    assert providers["openai"]["selected_env"] == "DEEP_READING_LLM_PROVIDER"
+
+
+def test_llm_providers_endpoint_updates_selected_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DEEP_READING_LLM_PROVIDER", raising=False)
+    client = TestClient(app)
+
+    try:
+        response = client.post("/llm/providers", json={"provider": "gemini"})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["selected"] == "gemini"
+    finally:
+        os.environ["DEEP_READING_LLM_PROVIDER"] = "mock"
+
+
+def test_llm_providers_endpoint_rejects_unknown_provider() -> None:
+    client = TestClient(app)
+
+    response = client.post("/llm/providers", json={"provider": "unknown"})
+
+    assert response.status_code == 400
+    assert "Unsupported LLM provider" in response.json()["error"]
 
 
 def test_status_endpoint_returns_workspace_status(tmp_path: Path) -> None:

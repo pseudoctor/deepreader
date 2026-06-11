@@ -3,7 +3,7 @@ VENV := .venv
 VENV_PYTHON := $(VENV)/bin/python
 VENV_PIP := $(VENV)/bin/pip
 
-.PHONY: install-dev api-dev web-install web-dev web-build desktop-install desktop-build desktop-dev lint format test check clean
+.PHONY: install-dev api-dev web-install web-dev web-build desktop-install desktop-build desktop-icon-mac desktop-backend-check desktop-signing-check desktop-dev desktop-package-mac desktop-dist-mac lint format test check clean
 
 install-dev:
 	$(PYTHON) -m venv $(VENV)
@@ -27,8 +27,23 @@ desktop-install:
 desktop-build:
 	npm run build --prefix apps/desktop
 
+desktop-icon-mac:
+	npm run icon:mac --prefix apps/desktop
+
+desktop-backend-check:
+	PYTHONPATH=scripts $(VENV_PYTHON) -c "import uvicorn; import deep_reading.api; print('deep-reading-backend-ok')"
+
+desktop-signing-check:
+	npm run signing:check --prefix apps/desktop
+
 desktop-dev:
 	npm run dev --prefix apps/desktop
+
+desktop-package-mac: web-build desktop-build
+	npm run package:mac --prefix apps/desktop
+
+desktop-dist-mac: web-build desktop-build
+	npm run dist:mac --prefix apps/desktop
 
 lint:
 	$(VENV_PYTHON) -m ruff check .
