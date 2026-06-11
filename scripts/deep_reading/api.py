@@ -23,6 +23,7 @@ from .service import (
     get_status,
     list_chapters,
     read_chapter,
+    synthesize_chapter_window,
     update_reading_state,
 )
 
@@ -73,6 +74,12 @@ class SelectionActionRequest(BaseModel):
     workspace: Path
     chapter_id: str
     selected_text: str
+
+
+class ChapterSynthesisRequest(BaseModel):
+    workspace: Path
+    start_chapter_id: str
+    count: int = Field(default=3, ge=1, le=10)
 
 
 class ReviewCardRequest(BaseModel):
@@ -161,6 +168,15 @@ def selection_review_question(request: SelectionActionRequest) -> dict[str, str]
         request.workspace,
         request.chapter_id,
         request.selected_text,
+    )
+
+
+@app.post("/chapter-synthesis")
+def chapter_synthesis(request: ChapterSynthesisRequest) -> dict[str, object]:
+    return synthesize_chapter_window(
+        request.workspace,
+        request.start_chapter_id,
+        request.count,
     )
 
 

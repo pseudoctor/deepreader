@@ -80,6 +80,16 @@ type SelectionReviewQuestionResult = {
   answer: string;
 };
 
+type ChapterSynthesisResult = {
+  start_chapter_id: string;
+  chapter_count: number;
+  chapters: ChapterSummary[];
+  common_question: string;
+  recurring_concepts: string[];
+  argument_progression: string;
+  open_questions: string[];
+};
+
 type SelectionToolbarPosition = {
   left: number;
   top: number;
@@ -160,6 +170,7 @@ const translations = {
     review: "Review",
     evidence: "Evidence",
     feynman: "Feynman",
+    synthesis: "Synthesis",
     feynmanSummary: "3-5 sentence summary",
     feynmanSummaryPlaceholder: "Explain the chapter in your own words...",
     checkSummary: "Check summary",
@@ -170,6 +181,14 @@ const translations = {
     unsupportedLeaps: "Unsupported leaps",
     rewrittenVersion: "Rewrite",
     noFeedbackItems: "No issues found",
+    synthesisStart: "Start chapter",
+    synthesisCount: "Chapter count",
+    runSynthesis: "Run synthesis",
+    saveSynthesisFeedback: "Save synthesis",
+    commonQuestion: "Common question",
+    recurringConcepts: "Recurring concepts",
+    argumentProgression: "Argument progression",
+    openQuestions: "Open questions",
     selectedText: "Selected text",
     saveQuote: "Save quote",
     makeEvidenceCard: "Make evidence card",
@@ -203,6 +222,8 @@ const translations = {
     feynmanFeedbackSaved: "Feynman feedback saved",
     explanationDrafted: "Explanation drafted",
     reviewQuestionDrafted: "Review question drafted",
+    synthesisReady: "Synthesis ready",
+    synthesisSaved: "Synthesis saved",
     quoteSaved: "Quote saved",
     obsidianExported: "Exported {count} Markdown files to {folder}",
     failedLoadWorkspace: "Failed to load workspace",
@@ -217,6 +238,8 @@ const translations = {
     failedSaveFeynmanFeedback: "Failed to save Feynman feedback",
     failedExplainSelection: "Failed to explain selection",
     failedMakeReviewQuestion: "Failed to make review question",
+    failedRunSynthesis: "Failed to run synthesis",
+    failedSaveSynthesis: "Failed to save synthesis",
     failedSaveQuote: "Failed to save quote",
     failedObsidianExport: "Failed to export to Obsidian",
     requestFailed: "Request failed",
@@ -283,6 +306,7 @@ const translations = {
     review: "复习卡",
     evidence: "证据卡",
     feynman: "费曼检查",
+    synthesis: "综合",
     feynmanSummary: "3-5 句总结",
     feynmanSummaryPlaceholder: "用自己的话解释本章...",
     checkSummary: "检查总结",
@@ -293,6 +317,14 @@ const translations = {
     unsupportedLeaps: "缺少证据的跳跃",
     rewrittenVersion: "改写版本",
     noFeedbackItems: "暂未发现问题",
+    synthesisStart: "起始章节",
+    synthesisCount: "章节数",
+    runSynthesis: "生成综合",
+    saveSynthesisFeedback: "保存综合",
+    commonQuestion: "共同问题",
+    recurringConcepts: "反复出现的概念",
+    argumentProgression: "论证推进",
+    openQuestions: "冲突或未解释处",
     selectedText: "已选文本",
     saveQuote: "保存摘录",
     makeEvidenceCard: "转为证据卡",
@@ -326,6 +358,8 @@ const translations = {
     feynmanFeedbackSaved: "费曼反馈已保存",
     explanationDrafted: "解释草稿已生成",
     reviewQuestionDrafted: "复习题草稿已生成",
+    synthesisReady: "跨章节综合已生成",
+    synthesisSaved: "跨章节综合已保存",
     quoteSaved: "摘录已保存",
     obsidianExported: "已导出 {count} 个 Markdown 文件到 {folder}",
     failedLoadWorkspace: "载入工作区失败",
@@ -340,6 +374,8 @@ const translations = {
     failedSaveFeynmanFeedback: "保存费曼反馈失败",
     failedExplainSelection: "解释选中文本失败",
     failedMakeReviewQuestion: "生成复习题失败",
+    failedRunSynthesis: "生成跨章节综合失败",
+    failedSaveSynthesis: "保存跨章节综合失败",
     failedSaveQuote: "保存摘录失败",
     failedObsidianExport: "导出到 Obsidian 失败",
     requestFailed: "请求失败",
@@ -426,6 +462,28 @@ function formatFeynmanFeedback(result: FeynmanCheckResult): string {
   ].join("\n");
 }
 
+function formatChapterSynthesis(result: ChapterSynthesisResult): string {
+  const list = (items: string[]) => items.map((item) => `- ${item}`).join("\n");
+  return [
+    "## Cross-Chapter Synthesis",
+    "",
+    "### Chapters",
+    list(result.chapters.map((chapter) => `${chapter.id}: ${chapter.title} (${chapter.state})`)),
+    "",
+    "### Common Question",
+    result.common_question,
+    "",
+    "### Recurring Concepts",
+    list(result.recurring_concepts),
+    "",
+    "### Argument Progression",
+    result.argument_progression,
+    "",
+    "### Open Questions",
+    list(result.open_questions),
+  ].join("\n");
+}
+
 function formatActionLabel(t: (typeof translations)[Language], action: NextAction): string {
   const key = `action_${action.kind}` as keyof typeof t;
   const label = t[key];
@@ -439,9 +497,9 @@ function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [activeChapter, setActiveChapter] = useState<ChapterText | null>(null);
-  const [activeCapture, setActiveCapture] = useState<"note" | "review" | "evidence" | "feynman">(
-    "note",
-  );
+  const [activeCapture, setActiveCapture] = useState<
+    "note" | "review" | "evidence" | "feynman" | "synthesis"
+  >("note");
   const [noteSection, setNoteSection] = useState("Confusions");
   const [noteType, setNoteType] = useState("My Thought");
   const [noteText, setNoteText] = useState("");
@@ -449,6 +507,9 @@ function App() {
   const [reviewAnswer, setReviewAnswer] = useState("");
   const [feynmanSummary, setFeynmanSummary] = useState("");
   const [feynmanResult, setFeynmanResult] = useState<FeynmanCheckResult | null>(null);
+  const [synthesisStartChapterId, setSynthesisStartChapterId] = useState("");
+  const [synthesisCount, setSynthesisCount] = useState(3);
+  const [synthesisResult, setSynthesisResult] = useState<ChapterSynthesisResult | null>(null);
   const [evidenceClaim, setEvidenceClaim] = useState("");
   const [evidenceLocator, setEvidenceLocator] = useState("");
   const [evidenceSupport, setEvidenceSupport] = useState("");
@@ -505,6 +566,7 @@ function App() {
       setStatus(nextStatus);
       setChapters(chapterResult.chapters);
       if (chapterResult.chapters.length > 0) {
+        setSynthesisStartChapterId(chapterResult.chapters[0].id);
         await loadChapter(chapterResult.chapters[0].id, nextWorkspace);
       }
       setRecentWorkspaces((current) => [
@@ -812,6 +874,52 @@ function App() {
     }
   }
 
+  async function runChapterSynthesis(event: FormEvent) {
+    event.preventDefault();
+    if (!synthesisStartChapterId.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await apiRequest<ChapterSynthesisResult>("/chapter-synthesis", {
+        method: "POST",
+        body: JSON.stringify({
+          workspace,
+          start_chapter_id: synthesisStartChapterId,
+          count: synthesisCount,
+        }),
+      });
+      setSynthesisResult(result);
+      setMessage(t.synthesisReady);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedRunSynthesis);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveChapterSynthesis() {
+    if (!synthesisResult) return;
+    setBusy(true);
+    setError("");
+    try {
+      await apiRequest("/notes", {
+        method: "POST",
+        body: JSON.stringify({
+          workspace,
+          chapter_id: synthesisResult.start_chapter_id,
+          section: "Coach Feedback",
+          note_type: "AI Explanation",
+          text: formatChapterSynthesis(synthesisResult),
+        }),
+      });
+      setMessage(t.synthesisSaved);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedSaveSynthesis);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveEvidenceCard(event: FormEvent) {
     event.preventDefault();
     if (!evidenceClaim.trim() || !evidenceLocator.trim() || !evidenceSupport.trim()) return;
@@ -1109,12 +1217,15 @@ function App() {
             ["review", t.review],
             ["evidence", t.evidence],
             ["feynman", t.feynman],
+            ["synthesis", t.synthesis],
           ].map(([id, label]) => (
             <button
               key={id}
               className={activeCapture === id ? "active" : ""}
               onClick={() =>
-                setActiveCapture(id as "note" | "review" | "evidence" | "feynman")
+                setActiveCapture(
+                  id as "note" | "review" | "evidence" | "feynman" | "synthesis",
+                )
               }
               type="button"
             >
@@ -1254,6 +1365,65 @@ function App() {
 
                 <button type="button" onClick={() => void saveFeynmanFeedback()} disabled={busy}>
                   {t.saveFeynmanFeedback}
+                </button>
+              </section>
+            )}
+          </form>
+        )}
+
+        {activeCapture === "synthesis" && (
+          <form onSubmit={runChapterSynthesis} className="capture-form">
+            <label htmlFor="synthesis-start">{t.synthesisStart}</label>
+            <select
+              id="synthesis-start"
+              value={synthesisStartChapterId}
+              onChange={(event) => setSynthesisStartChapterId(event.target.value)}
+            >
+              {chapters.map((chapter) => (
+                <option key={chapter.id} value={chapter.id}>
+                  {chapter.id}: {chapter.title}
+                </option>
+              ))}
+            </select>
+
+            <label htmlFor="synthesis-count">{t.synthesisCount}</label>
+            <input
+              id="synthesis-count"
+              min={1}
+              max={10}
+              type="number"
+              value={synthesisCount}
+              onChange={(event) => setSynthesisCount(Number(event.target.value))}
+            />
+
+            <button type="submit" disabled={busy || !synthesisStartChapterId}>
+              {t.runSynthesis}
+            </button>
+
+            {synthesisResult && (
+              <section className="feynman-result">
+                <h3>{t.commonQuestion}</h3>
+                <p>{synthesisResult.common_question}</p>
+
+                <h3>{t.recurringConcepts}</h3>
+                <ul>
+                  {synthesisResult.recurring_concepts.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+
+                <h3>{t.argumentProgression}</h3>
+                <p>{synthesisResult.argument_progression}</p>
+
+                <h3>{t.openQuestions}</h3>
+                <ul>
+                  {synthesisResult.open_questions.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+
+                <button type="button" onClick={() => void saveChapterSynthesis()} disabled={busy}>
+                  {t.saveSynthesisFeedback}
                 </button>
               </section>
             )}

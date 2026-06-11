@@ -16,6 +16,7 @@ from deep_reading.service import (
     get_status,
     list_chapters,
     read_chapter,
+    synthesize_chapter_window,
     update_reading_state,
 )
 
@@ -98,6 +99,27 @@ def test_read_chapter_returns_structured_text(tmp_path: Path) -> None:
     assert guide["core_question"].startswith("What problem")
     assert "evidence" in guide["evidence_to_seek"].casefold()
     assert "3-5 sentences" in guide["recall_prompt"]
+
+
+def test_synthesize_chapter_window_returns_cross_chapter_prompts(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    result = synthesize_chapter_window(workspace, "ch01", 2)
+
+    assert result["start_chapter_id"] == "ch01"
+    assert result["chapter_count"] == 2
+    assert [chapter["id"] for chapter in result["chapters"]] == ["ch01", "ch02"]
+    assert "jointly clarify" in str(result["common_question"])
+    assert result["recurring_concepts"]
+    assert "argument moves" in str(result["argument_progression"])
+    assert result["open_questions"]
+
+
+def test_synthesize_chapter_window_rejects_invalid_count(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    with pytest.raises(ExtractionError, match="Chapter count must be at least 1"):
+        synthesize_chapter_window(workspace, "ch01", 0)
 
 
 def test_check_feynman_summary_returns_structured_feedback(tmp_path: Path) -> None:

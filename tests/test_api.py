@@ -247,6 +247,28 @@ def test_selection_review_question_endpoint_returns_card_draft(tmp_path: Path) -
     assert "This is a short sample." in data["answer"]
 
 
+def test_chapter_synthesis_endpoint_returns_cross_chapter_prompts(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/chapter-synthesis",
+        json={
+            "workspace": str(workspace),
+            "start_chapter_id": "ch01",
+            "count": 2,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["start_chapter_id"] == "ch01"
+    assert data["chapter_count"] == 2
+    assert [chapter["id"] for chapter in data["chapters"]] == ["ch01", "ch02"]
+    assert data["recurring_concepts"]
+    assert data["open_questions"]
+
+
 def test_review_cards_endpoint_appends_card(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     client = TestClient(app)

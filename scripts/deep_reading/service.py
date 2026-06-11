@@ -167,6 +167,67 @@ def build_reading_guide(chapter_id: str, title: str) -> dict[str, str]:
     }
 
 
+def find_chapter_window(
+    metadata: dict[str, object],
+    chapter_id: str,
+    count: int,
+) -> list[dict[str, object]]:
+    if count < 1:
+        raise ExtractionError("Chapter count must be at least 1")
+
+    chapters = list(metadata.get("chapters", []))
+    start_index = next(
+        (index for index, chapter in enumerate(chapters) if chapter["id"] == chapter_id),
+        None,
+    )
+    if start_index is None:
+        raise ExtractionError(f"Unknown chapter: {chapter_id}")
+    return chapters[start_index : start_index + count]
+
+
+def synthesize_chapter_window(
+    workspace: Path,
+    start_chapter_id: str,
+    count: int = 3,
+) -> dict[str, object]:
+    metadata = load_metadata(workspace)
+    state = load_state(workspace)
+    chapters = find_chapter_window(metadata, start_chapter_id, count)
+    if not chapters:
+        raise ExtractionError("No chapters available for synthesis")
+
+    summaries = [
+        chapter_summary(
+            chapter,
+            str(state.get("chapters", {}).get(chapter["id"], "not-started")),
+        )
+        for chapter in chapters
+    ]
+    labels = [f"{chapter['id']}: {chapter['title']}" for chapter in summaries]
+    joined_labels = "; ".join(labels)
+    return {
+        "start_chapter_id": summaries[0]["id"],
+        "chapter_count": len(summaries),
+        "chapters": summaries,
+        "common_question": (
+            "What larger problem do these chapters jointly clarify? Use the chapter titles "
+            f"as anchors: {joined_labels}."
+        ),
+        "recurring_concepts": [
+            "Repeated terms, examples, places, actors, or mechanisms across the selected chapters.",
+            "Concepts that change meaning or become more precise from one chapter to the next.",
+        ],
+        "argument_progression": (
+            "Explain how the author's argument moves from the first selected chapter to the last: "
+            "what is introduced, what is tested, and what becomes more constrained?"
+        ),
+        "open_questions": [
+            "Which claim still needs stronger evidence after these chapters?",
+            "Where do the chapters leave a conflict, exception, or unexplained mechanism?",
+        ],
+    }
+
+
 def read_chapter(workspace: Path, chapter_id: str) -> dict[str, object]:
     chapter = get_chapter(workspace, chapter_id)
     return {

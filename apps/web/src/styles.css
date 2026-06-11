@@ -374,7 +374,7 @@ textarea {
   border: 1px solid #c2cec6;
   display: grid;
   gap: 2px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   margin-bottom: 16px;
   padding: 3px;
 }
@@ -383,7 +383,7 @@ textarea {
   background: transparent;
   border: 0;
   color: #53625d;
-  font-size: 0.84rem;
+  font-size: 0.78rem;
   font-weight: 700;
   min-height: 34px;
 }
