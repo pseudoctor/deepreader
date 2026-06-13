@@ -14,6 +14,7 @@ from deep_reading.service import (
     build_concept_map,
     build_evidence_context,
     build_evidence_table,
+    build_learning_journal,
     build_one_page_book_account,
     build_reading_guide,
     check_feynman_summary,
@@ -377,6 +378,41 @@ def test_save_evidence_context_writes_grounded_markdown(tmp_path: Path) -> None:
     assert "## Evidence Context" in content
     assert "**Query** short sample" in content
     assert "**Locator** ch01: Intro" in content
+
+
+def test_build_learning_journal_aggregates_saved_learning_content(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    add_note(workspace, "ch01", "Confusions", "Why does this comparison matter?", "Question")
+    add_note(workspace, "ch01", "Key Concepts", "This is a short sample.", "Quote")
+    add_review_card(workspace, "What changed?", "The reading became active.")
+    add_evidence_card(workspace, "Claim", "ch01: Intro", "Support", "High")
+    save_evidence_context(workspace, build_evidence_context(workspace, "short sample", "ch01"))
+    add_weak_concept(workspace, "causal chain", "ch01", "Mechanism is fuzzy.")
+
+    journal = build_learning_journal(workspace)
+    kinds = {item["kind"] for item in journal["items"]}
+
+    assert {
+        "question",
+        "quote",
+        "review_card",
+        "evidence_card",
+        "evidence_context",
+        "weak_concept",
+    } <= kinds
+    assert journal["groups"]["question"] == 1
+    assert any("Why does this comparison matter?" in item["content"] for item in journal["items"])
+    assert any(item["locator"] == "ch01: Intro" for item in journal["items"])
+
+
+def test_build_learning_journal_handles_empty_optional_files(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    journal = build_learning_journal(workspace)
+
+    assert journal["workspace"] == str(workspace)
+    assert isinstance(journal["items"], list)
+    assert isinstance(journal["groups"], dict)
 
 
 def test_build_concept_map_uses_chapters_evidence_and_weak_concepts(tmp_path: Path) -> None:

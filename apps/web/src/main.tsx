@@ -12,6 +12,7 @@ import {
 import {
   getInitialLanguage,
   getInitialObsidianFolder,
+  getInitialReadingFontSize,
   getInitialSelectionOutputLanguage,
   getInitialWorkspaceLibrary,
 } from "./storage";
@@ -26,13 +27,18 @@ import type {
   EvidenceContextResult,
   EvidenceTableResult,
   FeynmanCheckResult,
+  LearningJournalFilter,
+  LearningJournalItem,
+  LearningJournalResult,
   LLMModelCatalog,
   LLMProviderList,
   LLMProviderStatus,
   LearningLoop,
+  MainView,
   NextAction,
   ObsidianExportResult,
   OnePageBookAccountResult,
+  ReadingFontSize,
   SelectionExplanationResult,
   SelectionReviewQuestionResult,
   SelectionToolbarPosition,
@@ -55,6 +61,40 @@ const noteTypeOptions = ["Quote", "My Thought", "AI Explanation", "Question"] as
 const confidenceOptions = ["High", "Medium", "Low"] as const;
 
 const stateOptions = ["reading", "done", "review", "weak"] as const;
+const readingFontSizeOptions: { value: ReadingFontSize; label: string }[] = [
+  { value: "small", label: "A-" },
+  { value: "medium", label: "A" },
+  { value: "large", label: "A+" },
+];
+
+const journalKindOptions = [
+  "note",
+  "quote",
+  "question",
+  "review_card",
+  "evidence_card",
+  "evidence_context",
+  "weak_concept",
+] as const;
+
+const mapModeOptions = [
+  "synthesis",
+  "bookMap",
+  "onePageAccount",
+  "evidenceTable",
+  "conceptMap",
+  "learning",
+] as const;
+
+type MapMode = (typeof mapModeOptions)[number];
+
+const sidebarWidthLimits = { min: 180, max: 360 };
+const notesWidthLimits = { min: 220, max: 420 };
+const readingGuideHeightLimits = { min: 84, max: 280 };
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
 
 function containsCjk(text: string): boolean {
   return /[\u4e00-\u9fff]/.test(text);
@@ -92,6 +132,16 @@ function App() {
     | "learning"
     | "context"
   >("note");
+  const [mainView, setMainView] = useState<MainView>("reader");
+  const [mapMode, setMapMode] = useState<MapMode>("synthesis");
+  const [leftSidebarVisible, setLeftSidebarVisible] = useState(true);
+  const [rightSidebarVisible, setRightSidebarVisible] = useState(true);
+  const [readingGuideVisible, setReadingGuideVisible] = useState(true);
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState(240);
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(280);
+  const [readingGuideHeight, setReadingGuideHeight] = useState(154);
+  const [readingFontSize, setReadingFontSize] =
+    useState<ReadingFontSize>(getInitialReadingFontSize);
   const [noteSection, setNoteSection] = useState("Confusions");
   const [noteType, setNoteType] = useState("My Thought");
   const [noteText, setNoteText] = useState("");
@@ -123,6 +173,12 @@ function App() {
   const [obsidianFolder, setObsidianFolder] = useState(getInitialObsidianFolder);
   const [workspaceLibrary, setWorkspaceLibrary] =
     useState<WorkspaceLibraryItem[]>(getInitialWorkspaceLibrary);
+  const [learningJournal, setLearningJournal] = useState<LearningJournalResult | null>(null);
+  const [journalFilter, setJournalFilter] = useState<LearningJournalFilter>({
+    kind: "all",
+    chapter_id: "all",
+  });
+  const [selectedJournalItemId, setSelectedJournalItemId] = useState("");
   const [evidenceContextQuery, setEvidenceContextQuery] = useState("");
   const [evidenceContextResult, setEvidenceContextResult] =
     useState<EvidenceContextResult | null>(null);
@@ -141,6 +197,7 @@ function App() {
   const [weakConceptChapterId, setWeakConceptChapterId] = useState("");
   const [sourcePath, setSourcePath] = useState("");
   const [workspaceTarget, setWorkspaceTarget] = useState("");
+  const [importPanelOpen, setImportPanelOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -159,6 +216,10 @@ function App() {
   }, [selectionOutputLanguage]);
 
   useEffect(() => {
+    window.localStorage.setItem("deep-reading-font-size", readingFontSize);
+  }, [readingFontSize]);
+
+  useEffect(() => {
     window.localStorage.setItem(
       "deep-reading-workspace-library",
       JSON.stringify(workspaceLibrary),
@@ -173,13 +234,6 @@ function App() {
     void loadLLMProviders();
   }, []);
 
-  const progressText = useMemo(() => {
-    if (!status) return t.noWorkspaceLoaded;
-    return Object.entries(status.progress)
-      .map(([key, value]) => `${key}: ${value}`)
-      .join(" · ");
-  }, [status, t.noWorkspaceLoaded]);
-
   const currentProvider = useMemo(() => {
     if (!llmProviders) return null;
     return (
@@ -188,6 +242,24 @@ function App() {
   }, [llmProviders]);
 
   const providerModelCatalog = providerDraft ? providerModelCatalogs[providerDraft] : null;
+
+  const filteredJournalItems = useMemo(() => {
+    if (!learningJournal) return [];
+    return learningJournal.items.filter((item) => {
+      const kindMatches = journalFilter.kind === "all" || item.kind === journalFilter.kind;
+      const chapterMatches =
+        journalFilter.chapter_id === "all" || item.chapter_id === journalFilter.chapter_id;
+      return kindMatches && chapterMatches;
+    });
+  }, [journalFilter, learningJournal]);
+
+  const selectedJournalItem = useMemo<LearningJournalItem | null>(() => {
+    return (
+      filteredJournalItems.find((item) => item.id === selectedJournalItemId) ??
+      filteredJournalItems[0] ??
+      null
+    );
+  }, [filteredJournalItems, selectedJournalItemId]);
 
   function workspaceTitle(path: string): string {
     return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
@@ -236,6 +308,95 @@ function App() {
     );
   }
 
+  function journalKindLabel(kind: string): string {
+    const labels: Record<string, string> = {
+      note: t.note,
+      quote: t.quote,
+      question: t.question,
+      review_card: t.review,
+      evidence_card: t.evidence,
+      evidence_context: t.evidenceContext,
+      weak_concept: t.weakConcept,
+    };
+    return labels[kind] ?? kind;
+  }
+
+  function mapModeLabel(mode: MapMode): string {
+    const labels: Record<MapMode, string> = {
+      synthesis: t.synthesis,
+      bookMap: t.bookMap,
+      onePageAccount: t.onePageAccount,
+      evidenceTable: t.evidenceTable,
+      conceptMap: t.conceptMap,
+      learning: t.learningLoop,
+    };
+    return labels[mode];
+  }
+
+  function selectMainView(nextView: MainView) {
+    setMainView(nextView);
+    if (nextView === "journal") {
+      void loadLearningJournal();
+    }
+  }
+
+  function startHorizontalResize(side: "left" | "right", event: React.PointerEvent) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = side === "left" ? leftSidebarWidth : rightSidebarWidth;
+    const limits = side === "left" ? sidebarWidthLimits : notesWidthLimits;
+
+    function handleMove(moveEvent: PointerEvent) {
+      const delta = moveEvent.clientX - startX;
+      const nextWidth = side === "left" ? startWidth + delta : startWidth - delta;
+      const clamped = clamp(nextWidth, limits.min, limits.max);
+      if (side === "left") {
+        setLeftSidebarWidth(clamped);
+      } else {
+        setRightSidebarWidth(clamped);
+      }
+    }
+
+    function stopResize() {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", stopResize);
+    }
+
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", stopResize);
+  }
+
+  function startVerticalResize(event: React.PointerEvent) {
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = readingGuideHeight;
+
+    function handleMove(moveEvent: PointerEvent) {
+      const delta = moveEvent.clientY - startY;
+      setReadingGuideHeight(
+        clamp(
+          startHeight + delta,
+          readingGuideHeightLimits.min,
+          readingGuideHeightLimits.max,
+        ),
+      );
+    }
+
+    function stopResize() {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", stopResize);
+    }
+
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", stopResize);
+  }
+
+  const readerGridColumns = [
+    leftSidebarVisible ? `${leftSidebarWidth}px` : null,
+    "minmax(0, 1fr)",
+    rightSidebarVisible ? `${rightSidebarWidth}px` : null,
+  ].filter(Boolean).join(" ");
+
   useEffect(() => {
     if (settingsOpen && providerDraft && !providerModelCatalogs[providerDraft]) {
       void loadLLMModels(providerDraft);
@@ -253,12 +414,15 @@ function App() {
     setMessage("");
     try {
       const query = new URLSearchParams({ workspace: nextWorkspace });
-      const [nextStatus, chapterResult] = await Promise.all([
+      const [nextStatus, chapterResult, journalResult] = await Promise.all([
         apiRequest<Status>(`/status?${query.toString()}`),
         apiRequest<{ chapters: Chapter[] }>(`/chapters?${query.toString()}`),
+        apiRequest<LearningJournalResult>(`/learning-journal?${query.toString()}`),
       ]);
       setStatus(nextStatus);
       setChapters(chapterResult.chapters);
+      setLearningJournal(journalResult);
+      setSelectedJournalItemId(journalResult.items[0]?.id ?? "");
       if (chapterResult.chapters.length > 0) {
         setSynthesisStartChapterId(chapterResult.chapters[0].id);
         setRecallChapterId(chapterResult.chapters[0].id);
@@ -271,6 +435,22 @@ function App() {
       setError(err instanceof Error ? err.message : t.failedLoadWorkspace);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function loadLearningJournal(nextWorkspace = workspace) {
+    if (!nextWorkspace.trim()) return;
+    try {
+      const query = new URLSearchParams({ workspace: nextWorkspace });
+      const result = await apiRequest<LearningJournalResult>(`/learning-journal?${query.toString()}`);
+      setLearningJournal(result);
+      setSelectedJournalItemId((current) =>
+        current && result.items.some((item) => item.id === current)
+          ? current
+          : result.items[0]?.id ?? "",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedLoadJournal);
     }
   }
 
@@ -359,6 +539,7 @@ function App() {
       const query = new URLSearchParams({ workspace });
       const result = await apiRequest<LearningLoop>(`/learning-loop?${query.toString()}`);
       setStatus((current) => (current ? { ...current, learning_loop: result } : current));
+      void loadLearningJournal();
       setWeakConcept("");
       setWeakConceptNote("");
       setMessage(t.weakConceptSaved);
@@ -431,6 +612,7 @@ function App() {
       );
       setWorkspace(createdWorkspace);
       await loadWorkspace(createdWorkspace);
+      setImportPanelOpen(false);
       setMessage(t.workspaceCreated);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedCreateWorkspace);
@@ -686,6 +868,7 @@ function App() {
           result: evidenceContextResult,
         }),
       });
+      void loadLearningJournal();
       setMessage(t.evidenceContextSaved);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedSaveEvidenceContext);
@@ -733,6 +916,7 @@ function App() {
           text: noteText.trim(),
         }),
       });
+      void loadLearningJournal();
       setNoteText("");
       setMessage(t.noteSaved);
     } catch (err) {
@@ -756,6 +940,7 @@ function App() {
           answer: reviewAnswer.trim(),
         }),
       });
+      void loadLearningJournal();
       setReviewQuestion("");
       setReviewAnswer("");
       setMessage(t.reviewCardSaved);
@@ -845,6 +1030,7 @@ function App() {
           text: formatFeynmanFeedback(feynmanResult),
         }),
       });
+      void loadLearningJournal();
       setMessage(t.feynmanFeedbackSaved);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedSaveFeynmanFeedback);
@@ -891,6 +1077,7 @@ function App() {
           text: formatChapterSynthesis(synthesisResult),
         }),
       });
+      void loadLearningJournal();
       setMessage(t.synthesisSaved);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedSaveSynthesis);
@@ -1065,6 +1252,7 @@ function App() {
           inference: evidenceInference.trim() || "TBD",
         }),
       });
+      void loadLearningJournal();
       setEvidenceClaim("");
       setEvidenceSupport("");
       setEvidenceNotExplicit("");
@@ -1116,6 +1304,22 @@ function App() {
         <p className="top-nav-workspace" title={status?.workspace ?? workspace}>
           {status?.workspace ?? t.noWorkspaceLoaded}
         </p>
+        <div className="main-view-switcher" role="tablist" aria-label={t.mainView}>
+          {[
+            ["reader", t.readerView],
+            ["journal", t.journalView],
+            ["map", t.mapView],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              className={mainView === id ? "active" : ""}
+              onClick={() => selectMainView(id as MainView)}
+              type="button"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="top-nav-actions">
           <div className="language-switcher" aria-label={t.language}>
             {languages.map((option) => (
@@ -1149,52 +1353,10 @@ function App() {
         </div>
       </header>
 
-      <div className="workspace-layout">
+      {mainView === "reader" && (
+      <div className="workspace-layout" style={{ gridTemplateColumns: readerGridColumns }}>
+        {leftSidebarVisible && (
         <aside className="sidebar">
-        {window.deepReadingDesktop && (
-          <form className="create-workspace-form" onSubmit={createWorkspace}>
-            <span className="eyebrow">{t.newWorkspace}</span>
-            <label htmlFor="source-path">{t.sourcePath}</label>
-            <div className="path-picker-row">
-              <input
-                id="source-path"
-                value={sourcePath}
-                onChange={(event) => setSourcePath(event.target.value)}
-                placeholder={t.sourcePathPlaceholder}
-                spellCheck={false}
-              />
-              <button type="button" onClick={() => void selectSourcePath()} disabled={busy}>
-                {t.selectSource}
-              </button>
-            </div>
-
-            <label htmlFor="workspace-target">{t.workspaceTarget}</label>
-            <div className="path-picker-row">
-              <input
-                id="workspace-target"
-                value={workspaceTarget}
-                onChange={(event) => setWorkspaceTarget(event.target.value)}
-                placeholder={t.workspaceTargetPlaceholder}
-                spellCheck={false}
-              />
-              <button
-                type="button"
-                onClick={() => void selectWorkspaceTargetFolder()}
-                disabled={busy}
-              >
-                {t.selectWorkspaceTarget}
-              </button>
-            </div>
-
-            <button
-              type="submit"
-              disabled={busy || !sourcePath.trim() || !workspaceTarget.trim()}
-            >
-              {t.createWorkspace}
-            </button>
-          </form>
-        )}
-
         <form
           className="workspace-form"
           onSubmit={(event) => {
@@ -1202,7 +1364,18 @@ function App() {
             void loadWorkspace();
           }}
         >
-          <label htmlFor="workspace">{t.workspace}</label>
+          <div className="sidebar-section-header">
+            <label htmlFor="workspace">{t.workspace}</label>
+            <button
+              className="pane-toggle"
+              type="button"
+              onClick={() => setLeftSidebarVisible(false)}
+              aria-label={t.hideLeftSidebar}
+              title={t.hideLeftSidebar}
+            >
+              <span className="pane-icon pane-icon-left" aria-hidden="true" />
+            </button>
+          </div>
           <input
             id="workspace"
             value={workspace}
@@ -1218,6 +1391,61 @@ function App() {
             {t.load}
           </button>
         </form>
+
+        <section className="import-workspace">
+          <button
+            className="import-workspace-toggle"
+            type="button"
+            onClick={() => setImportPanelOpen((current) => !current)}
+          >
+            {t.importBook}
+          </button>
+          {importPanelOpen && window.deepReadingDesktop && (
+            <form className="create-workspace-form" onSubmit={createWorkspace}>
+              <label htmlFor="source-path">{t.sourcePath}</label>
+              <div className="path-picker-row">
+                <input
+                  id="source-path"
+                  value={sourcePath}
+                  onChange={(event) => setSourcePath(event.target.value)}
+                  placeholder={t.sourcePathPlaceholder}
+                  spellCheck={false}
+                />
+                <button type="button" onClick={() => void selectSourcePath()} disabled={busy}>
+                  {t.selectSource}
+                </button>
+              </div>
+
+              <label htmlFor="workspace-target">{t.workspaceTarget}</label>
+              <div className="path-picker-row">
+                <input
+                  id="workspace-target"
+                  value={workspaceTarget}
+                  onChange={(event) => setWorkspaceTarget(event.target.value)}
+                  placeholder={t.workspaceTargetPlaceholder}
+                  spellCheck={false}
+                />
+                <button
+                  type="button"
+                  onClick={() => void selectWorkspaceTargetFolder()}
+                  disabled={busy}
+                >
+                  {t.selectWorkspaceTarget}
+                </button>
+              </div>
+
+              <button
+                type="submit"
+                disabled={busy || !sourcePath.trim() || !workspaceTarget.trim()}
+              >
+                {t.createWorkspace}
+              </button>
+            </form>
+          )}
+          {importPanelOpen && !window.deepReadingDesktop && (
+            <p className="muted">{t.importBookDesktopOnly}</p>
+          )}
+        </section>
 
         <div className="recent-workspaces">
           <span className="eyebrow">{t.workspaceLibrary}</span>
@@ -1255,46 +1483,6 @@ function App() {
             </div>
           )}
         </div>
-
-        <div className="status-block">
-          <span>{t.status}</span>
-          <strong>{progressText}</strong>
-        </div>
-
-        {status && (
-          <section className="continue-reading">
-            <span className="eyebrow">{t.continueReading}</span>
-            {status.continue_reading.current_chapter && (
-              <p>
-                <strong>{t.currentChapter}</strong>
-                <span>
-                  {status.continue_reading.current_chapter.id}:{" "}
-                  {status.continue_reading.current_chapter.title}
-                </span>
-              </p>
-            )}
-            <p>
-              <strong>{t.reviewDue.replace("{count}", String(status.continue_reading.review_due.length))}</strong>
-            </p>
-            <button
-              type="button"
-              disabled={busy || !status.continue_reading.next_action.chapter_id}
-              onClick={() => {
-                const chapterId = status.continue_reading.next_action.chapter_id;
-                if (chapterId) void loadChapter(chapterId);
-              }}
-            >
-              <span>{t.nextStep}</span>
-              <strong>{formatActionLabel(t, status.continue_reading.next_action)}</strong>
-              {status.continue_reading.next_action.chapter_id && (
-                <em>
-                  {status.continue_reading.next_action.chapter_id}:{" "}
-                  {status.continue_reading.next_action.title}
-                </em>
-              )}
-            </button>
-          </section>
-        )}
 
         <form className="export-form" onSubmit={exportToObsidian}>
           <span className="eyebrow">{t.export}</span>
@@ -1338,9 +1526,36 @@ function App() {
             );
           })}
         </nav>
+        <div
+          className="resize-handle resize-handle-left"
+          role="separator"
+          aria-label={t.resizeLeftSidebar}
+          onPointerDown={(event) => startHorizontalResize("left", event)}
+        />
         </aside>
+        )}
 
-        <section className="reader-pane">
+        {!leftSidebarVisible && (
+          <button
+            className="pane-toggle pane-restore pane-restore-left"
+            type="button"
+            onClick={() => setLeftSidebarVisible(true)}
+            aria-label={t.showLeftSidebar}
+            title={t.showLeftSidebar}
+          >
+            <span className="pane-icon pane-icon-left" aria-hidden="true" />
+          </button>
+        )}
+
+        <section
+          className="reader-pane"
+          style={{
+            gridTemplateRows:
+              activeChapter && readingGuideVisible
+                ? `auto minmax(${readingGuideHeightLimits.min}px, ${readingGuideHeight}px) minmax(0, 1fr)`
+                : "auto minmax(0, 1fr)",
+          }}
+        >
         {selectionToolbarPosition && selectedText && (
           <div
             className="selection-toolbar"
@@ -1388,6 +1603,19 @@ function App() {
             <h2>{activeChapter ? `${activeChapter.id}: ${activeChapter.title}` : t.noChapter}</h2>
           </div>
           <div className="state-actions">
+            <div className="font-size-control" aria-label={t.readingFontSize}>
+              {readingFontSizeOptions.map((option) => (
+                <button
+                  key={option.value}
+                  className={readingFontSize === option.value ? "active" : ""}
+                  type="button"
+                  onClick={() => setReadingFontSize(option.value)}
+                  title={t.readingFontSize}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
             {stateOptions.map((stateName) => (
               <button
                 key={stateName}
@@ -1398,12 +1626,29 @@ function App() {
                 {t.stateLabels[stateName]}
               </button>
             ))}
+            {activeChapter && (
+              <button
+                className="pane-toggle pane-toggle-toolbar"
+                type="button"
+                onClick={() => setReadingGuideVisible((current) => !current)}
+                aria-label={readingGuideVisible ? t.hideReadingGuide : t.showReadingGuide}
+                title={readingGuideVisible ? t.hideReadingGuide : t.showReadingGuide}
+              >
+                <span className="pane-icon pane-icon-top" aria-hidden="true" />
+              </button>
+            )}
           </div>
         </div>
 
-        {activeChapter && (
-          <section className="reading-guide" aria-label={t.beforeReading}>
-            <span className="eyebrow">{t.beforeReading}</span>
+        {activeChapter && readingGuideVisible && (
+          <section
+            className="reading-guide"
+            aria-label={t.beforeReading}
+            style={{ height: readingGuideHeight }}
+          >
+            <div className="reading-guide-header">
+              <span className="eyebrow">{t.beforeReading}</span>
+            </div>
             <div className="reading-guide-grid">
               <article>
                 <h3>{t.coreQuestion}</h3>
@@ -1418,11 +1663,17 @@ function App() {
                 <p>{activeChapter.reading_guide.recall_prompt}</p>
               </article>
             </div>
+            <div
+              className="resize-handle resize-handle-guide"
+              role="separator"
+              aria-label={t.resizeReadingGuide}
+              onPointerDown={startVerticalResize}
+            />
           </section>
         )}
 
         <article
-          className="chapter-text"
+          className={`chapter-text chapter-text-${readingFontSize}`}
           onMouseUp={handleTextSelection}
           onKeyUp={handleTextSelection}
         >
@@ -1430,7 +1681,35 @@ function App() {
         </article>
         </section>
 
+        {!rightSidebarVisible && (
+          <button
+            className="pane-toggle pane-restore pane-restore-right"
+            type="button"
+            onClick={() => setRightSidebarVisible(true)}
+            aria-label={t.showRightSidebar}
+            title={t.showRightSidebar}
+          >
+            <span className="pane-icon pane-icon-right" aria-hidden="true" />
+          </button>
+        )}
+
+        {rightSidebarVisible && (
         <aside className="notes-pane">
+        <div
+          className="resize-handle resize-handle-right"
+          role="separator"
+          aria-label={t.resizeRightSidebar}
+          onPointerDown={(event) => startHorizontalResize("right", event)}
+        />
+        <button
+          className="pane-toggle pane-toggle-inline pane-toggle-right"
+          type="button"
+          onClick={() => setRightSidebarVisible(false)}
+          aria-label={t.hideRightSidebar}
+          title={t.hideRightSidebar}
+        >
+          <span className="pane-icon pane-icon-right" aria-hidden="true" />
+        </button>
         <header>
           <span className="eyebrow">{t.capture}</span>
           <h2>{t.buildUnderstanding}</h2>
@@ -1443,24 +1722,13 @@ function App() {
             ["evidence", t.evidence],
             ["feynman", t.feynman],
             ["context", t.evidenceContext],
-            ["synthesis", t.synthesis],
-            ["bookMap", t.bookMap],
-            ["learning", t.learning],
           ].map(([id, label]) => (
             <button
               key={id}
               className={activeCapture === id ? "active" : ""}
               onClick={() =>
                 setActiveCapture(
-                  id as
-                    | "note"
-                    | "review"
-                    | "evidence"
-                    | "feynman"
-                    | "synthesis"
-                    | "bookMap"
-                    | "learning"
-                    | "context",
+                  id as "note" | "review" | "evidence" | "feynman" | "context",
                 )
               }
               type="button"
@@ -2205,7 +2473,412 @@ function App() {
           {error && <p className="error">{error}</p>}
         </div>
       </aside>
+      )}
       </div>
+      )}
+
+      {mainView === "journal" && (
+        <div className="journal-layout">
+          <aside className="journal-filters">
+            <header>
+              <span className="eyebrow">{t.journalView}</span>
+              <h2>{t.learningJournal}</h2>
+            </header>
+            <label htmlFor="journal-kind">{t.captureType}</label>
+            <select
+              id="journal-kind"
+              value={journalFilter.kind}
+              onChange={(event) =>
+                setJournalFilter((current) => ({ ...current, kind: event.target.value }))
+              }
+            >
+              <option value="all">{t.allTypes}</option>
+              {journalKindOptions.map((kind) => (
+                <option key={kind} value={kind}>
+                  {journalKindLabel(kind)}
+                  {learningJournal?.groups[kind] ? ` (${learningJournal.groups[kind]})` : ""}
+                </option>
+              ))}
+            </select>
+
+            <label htmlFor="journal-chapter">{t.chapter}</label>
+            <select
+              id="journal-chapter"
+              value={journalFilter.chapter_id}
+              onChange={(event) =>
+                setJournalFilter((current) => ({
+                  ...current,
+                  chapter_id: event.target.value,
+                }))
+              }
+            >
+              <option value="all">{t.allChapters}</option>
+              {chapters.map((chapter) => (
+                <option key={chapter.id} value={chapter.id}>
+                  {chapter.id}: {chapter.title}
+                </option>
+              ))}
+            </select>
+
+            <button type="button" onClick={() => void loadLearningJournal()} disabled={busy}>
+              {t.refresh}
+            </button>
+          </aside>
+
+          <section className="journal-stream">
+            <header>
+              <div>
+                <span className="eyebrow">{t.learningJournal}</span>
+                <h2>{filteredJournalItems.length} {t.journalItems}</h2>
+              </div>
+            </header>
+            {filteredJournalItems.length === 0 ? (
+              <p className="muted">{t.journalEmpty}</p>
+            ) : (
+              filteredJournalItems.map((item) => (
+                <button
+                  key={item.id}
+                  className={selectedJournalItem?.id === item.id ? "journal-item active" : "journal-item"}
+                  type="button"
+                  onClick={() => setSelectedJournalItemId(item.id)}
+                >
+                  <span>{journalKindLabel(item.kind)}</span>
+                  <strong>{item.title}</strong>
+                  <em>{item.locator}</em>
+                  <p>{item.content}</p>
+                </button>
+              ))
+            )}
+          </section>
+
+          <aside className="journal-detail">
+            <header>
+              <span className="eyebrow">{t.journalDetail}</span>
+              <h2>{selectedJournalItem?.title ?? t.noSelection}</h2>
+            </header>
+            {selectedJournalItem ? (
+              <>
+                <dl>
+                  <div>
+                    <dt>{t.captureType}</dt>
+                    <dd>{journalKindLabel(selectedJournalItem.kind)}</dd>
+                  </div>
+                  <div>
+                    <dt>{t.locator}</dt>
+                    <dd>{selectedJournalItem.locator}</dd>
+                  </div>
+                  <div>
+                    <dt>{t.sourcePathLabel}</dt>
+                    <dd>{selectedJournalItem.source_path}</dd>
+                  </div>
+                </dl>
+                <article className="journal-detail-content">
+                  {selectedJournalItem.content}
+                </article>
+                {selectedJournalItem.chapter_id && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMainView("reader");
+                      void loadChapter(selectedJournalItem.chapter_id ?? "");
+                    }}
+                    disabled={busy}
+                  >
+                    {t.openInReader}
+                  </button>
+                )}
+              </>
+            ) : (
+              <p className="muted">{t.journalEmpty}</p>
+            )}
+            <div className="message-stack" aria-live="polite">
+              {busy && <p className="muted">{t.working}</p>}
+              {message && <p className="success">{message}</p>}
+              {error && <p className="error">{error}</p>}
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {mainView === "map" && (
+        <div className="map-layout">
+          <aside className="map-sidebar">
+            <header>
+              <span className="eyebrow">{t.mapView}</span>
+              <h2>{t.bookMap}</h2>
+            </header>
+            <nav className="map-mode-list" aria-label={t.mapView}>
+              {mapModeOptions.map((mode) => (
+                <button
+                  key={mode}
+                  className={mapMode === mode ? "active" : ""}
+                  type="button"
+                  onClick={() => setMapMode(mode)}
+                >
+                  {mapModeLabel(mode)}
+                </button>
+              ))}
+            </nav>
+          </aside>
+
+          <section className="map-stage">
+            <header>
+              <div>
+                <span className="eyebrow">{t.mapOutput}</span>
+                <h2>{mapModeLabel(mapMode)}</h2>
+              </div>
+            </header>
+
+            {mapMode === "synthesis" && (
+              <form onSubmit={runChapterSynthesis} className="capture-form map-tool">
+                <label htmlFor="map-synthesis-start">{t.synthesisStart}</label>
+                <select
+                  id="map-synthesis-start"
+                  value={synthesisStartChapterId}
+                  onChange={(event) => setSynthesisStartChapterId(event.target.value)}
+                >
+                  {chapters.map((chapter) => (
+                    <option key={chapter.id} value={chapter.id}>
+                      {chapter.id}: {chapter.title}
+                    </option>
+                  ))}
+                </select>
+                <label htmlFor="map-synthesis-count">{t.synthesisCount}</label>
+                <input
+                  id="map-synthesis-count"
+                  min={1}
+                  max={10}
+                  type="number"
+                  value={synthesisCount}
+                  onChange={(event) => setSynthesisCount(Number(event.target.value))}
+                />
+                <button type="submit" disabled={busy || !synthesisStartChapterId}>
+                  {t.runSynthesis}
+                </button>
+                {synthesisResult ? (
+                  <section className="feynman-result">
+                    <h3>{t.commonQuestion}</h3>
+                    <p>{synthesisResult.common_question}</p>
+                    <h3>{t.recurringConcepts}</h3>
+                    <ul>{synthesisResult.recurring_concepts.map((item) => <li key={item}>{item}</li>)}</ul>
+                    <h3>{t.argumentProgression}</h3>
+                    <p>{synthesisResult.argument_progression}</p>
+                    <h3>{t.openQuestions}</h3>
+                    <ul>{synthesisResult.open_questions.map((item) => <li key={item}>{item}</li>)}</ul>
+                    <button type="button" onClick={() => void saveChapterSynthesis()} disabled={busy}>
+                      {t.saveSynthesisFeedback}
+                    </button>
+                  </section>
+                ) : (
+                  <p className="muted">{t.noMapResult}</p>
+                )}
+              </form>
+            )}
+
+            {mapMode === "bookMap" && (
+              <div className="capture-form map-tool">
+                <button type="button" onClick={() => void buildBookMap()} disabled={busy}>
+                  {t.buildBookMap}
+                </button>
+                {bookArgumentMap ? (
+                  <section className="feynman-result">
+                    <h3>{t.coreProblem}</h3>
+                    <p>{bookArgumentMap.core_problem}</p>
+                    <h3>{t.coreAnswer}</h3>
+                    <p>{bookArgumentMap.core_answer}</p>
+                    <h3>{t.argumentChain}</h3>
+                    <ul>{bookArgumentMap.argument_chain.map((item) => <li key={item}>{item}</li>)}</ul>
+                    <h3>{t.keyEvidence}</h3>
+                    <ul>{bookArgumentMap.key_evidence.map((item) => <li key={item}>{item}</li>)}</ul>
+                    <h3>{t.rebuttalsAndLimits}</h3>
+                    <ul>{bookArgumentMap.rebuttals_and_limits.map((item) => <li key={item}>{item}</li>)}</ul>
+                    <button type="button" onClick={() => void saveBookMap()} disabled={busy}>
+                      {t.saveBookMap}
+                    </button>
+                  </section>
+                ) : (
+                  <p className="muted">{t.noMapResult}</p>
+                )}
+              </div>
+            )}
+
+            {mapMode === "onePageAccount" && (
+              <div className="capture-form map-tool">
+                <button type="button" onClick={() => void buildOnePageBookAccount()} disabled={busy}>
+                  {t.buildOnePageAccount}
+                </button>
+                {onePageBookAccount ? (
+                  <section className="feynman-result">
+                    <h3>{t.onePageAccount}</h3>
+                    <p>
+                      {onePageBookAccount.title} · {onePageBookAccount.completed_count}/
+                      {onePageBookAccount.chapter_count} · {onePageBookAccount.average_mastery}%
+                    </p>
+                    <h3>{t.coreAnswer}</h3>
+                    <p>{onePageBookAccount.core_account}</p>
+                    <h3>{t.argumentChain}</h3>
+                    <ul>{onePageBookAccount.core_argument_chain.map((item) => <li key={item}>{item}</li>)}</ul>
+                    <h3>{t.strongestEvidence}</h3>
+                    <ul>{onePageBookAccount.strongest_evidence.map((item) => <li key={item}>{item}</li>)}</ul>
+                    <h3>{t.weakPoints}</h3>
+                    <ul>{onePageBookAccount.weak_points.map((item) => <li key={item}>{item}</li>)}</ul>
+                    <h3>{t.applicationPrompts}</h3>
+                    <ul>{onePageBookAccount.application_prompts.map((item) => <li key={item}>{item}</li>)}</ul>
+                    <button type="button" onClick={() => void saveOnePageBookAccount()} disabled={busy}>
+                      {t.saveOnePageAccount}
+                    </button>
+                  </section>
+                ) : (
+                  <p className="muted">{t.noMapResult}</p>
+                )}
+              </div>
+            )}
+
+            {mapMode === "evidenceTable" && (
+              <div className="capture-form map-tool">
+                <button type="button" onClick={() => void buildEvidenceTable()} disabled={busy}>
+                  {t.buildEvidenceTable}
+                </button>
+                {evidenceTable ? (
+                  <section className="feynman-result">
+                    <h3>{t.evidenceTable}</h3>
+                    <p>{evidenceTable.card_count} {t.evidence}</p>
+                    {evidenceTable.cards.map((card) => (
+                      <article key={`${card.claim}-${card.source_locator}`} className="recall-item">
+                        <h3>{card.claim || t.claim}</h3>
+                        <p><strong>{t.sourceLocator}</strong> {card.source_locator || "TBD"}</p>
+                        <p><strong>{t.support}</strong> {card.support || "TBD"}</p>
+                      </article>
+                    ))}
+                    <button type="button" onClick={() => void saveEvidenceTable()} disabled={busy}>
+                      {t.saveEvidenceTable}
+                    </button>
+                  </section>
+                ) : (
+                  <p className="muted">{t.noMapResult}</p>
+                )}
+              </div>
+            )}
+
+            {mapMode === "conceptMap" && (
+              <div className="capture-form map-tool">
+                <button type="button" onClick={() => void buildConceptMap()} disabled={busy}>
+                  {t.buildConceptMap}
+                </button>
+                {conceptMap ? (
+                  <section className="feynman-result">
+                    <h3>{t.nodes}</h3>
+                    <ul>
+                      {conceptMap.nodes.map((node) => (
+                        <li key={node.id}>{node.label} ({node.type}, {node.mastery_score}%)</li>
+                      ))}
+                    </ul>
+                    <h3>{t.links}</h3>
+                    <ul>
+                      {conceptMap.links.map((link) => (
+                        <li key={`${link.source}-${link.relation}-${link.target}`}>
+                          {link.source} - {link.relation} - {link.target}: {link.evidence}
+                        </li>
+                      ))}
+                    </ul>
+                    <button type="button" onClick={() => void saveConceptMap()} disabled={busy}>
+                      {t.saveConceptMap}
+                    </button>
+                  </section>
+                ) : (
+                  <p className="muted">{t.noMapResult}</p>
+                )}
+              </div>
+            )}
+
+            {mapMode === "learning" && (
+              <section className="learning-loop learning-panel map-tool">
+                {status ? (
+                  <>
+                    <div className="learning-loop-metrics">
+                      <p><strong>{status.learning_loop.average_mastery}%</strong><span>{t.averageMastery}</span></p>
+                      <p><strong>{status.learning_loop.completed_count}</strong><span>{t.completedChapters}</span></p>
+                      <p><strong>{status.learning_loop.review_ready.length}</strong><span>{t.reviewReady}</span></p>
+                      <p><strong>{status.learning_loop.weak_chapters.length}</strong><span>{t.weakChapters}</span></p>
+                    </div>
+                    <div className="mastery-meter" aria-label={`${t.averageMastery} ${status.learning_loop.average_mastery}%`}>
+                      <span style={{ width: `${status.learning_loop.average_mastery}%` }} />
+                    </div>
+                    {status.learning_loop.synthesis_due && <p className="success">{t.synthesisDue}</p>}
+                  </>
+                ) : (
+                  <p className="muted">{t.noWorkspaceLoaded}</p>
+                )}
+              </section>
+            )}
+          </section>
+
+          <aside className="map-detail">
+            <header>
+              <span className="eyebrow">{t.mapEvidenceSide}</span>
+              <h2>{t.weakConcepts}</h2>
+            </header>
+            {status?.learning_loop.weak_concepts.length ? (
+              <div className="weak-concept-list">
+                {status.learning_loop.weak_concepts.map((item) => (
+                  <button
+                    key={`${item.chapter_id}-${item.concept}`}
+                    type="button"
+                    onClick={() => {
+                      setMainView("reader");
+                      void loadChapter(item.chapter_id);
+                    }}
+                    disabled={busy}
+                    title={item.note}
+                  >
+                    <span>{item.concept}</span>
+                    <em>{item.chapter_id}: {item.title}</em>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">{t.noWeakConcepts}</p>
+            )}
+            <form className="weak-concept-form" onSubmit={addWeakConcept}>
+              <label htmlFor="map-weak-concept">{t.weakConcept}</label>
+              <input
+                id="map-weak-concept"
+                value={weakConcept}
+                onChange={(event) => setWeakConcept(event.target.value)}
+                placeholder={t.weakConceptPlaceholder}
+              />
+              <label htmlFor="map-weak-concept-chapter">{t.chapter}</label>
+              <select
+                id="map-weak-concept-chapter"
+                value={weakConceptChapterId}
+                onChange={(event) => setWeakConceptChapterId(event.target.value)}
+              >
+                {chapters.map((chapter) => (
+                  <option key={chapter.id} value={chapter.id}>
+                    {chapter.id}: {chapter.title}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="map-weak-concept-note">{t.weakConceptNote}</label>
+              <textarea
+                id="map-weak-concept-note"
+                className="mini"
+                value={weakConceptNote}
+                onChange={(event) => setWeakConceptNote(event.target.value)}
+                placeholder={t.weakConceptNotePlaceholder}
+              />
+              <button type="submit" disabled={busy || !weakConcept.trim() || !weakConceptChapterId}>
+                {t.addWeakConcept}
+              </button>
+            </form>
+            <div className="message-stack" aria-live="polite">
+              {busy && <p className="muted">{t.working}</p>}
+              {message && <p className="success">{message}</p>}
+              {error && <p className="error">{error}</p>}
+            </div>
+          </aside>
+        </div>
+      )}
 
       {settingsOpen && llmProviders && (
         <div className="settings-overlay" onClick={() => setSettingsOpen(false)}>

@@ -77,6 +77,224 @@ def read_text_if_exists(path: Path) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
+def chapter_title_map(workspace: Path) -> dict[str, str]:
+    metadata = load_metadata(workspace)
+    return {
+        str(chapter.get("id", "")): str(chapter.get("title", ""))
+        for chapter in metadata.get("chapters", [])
+        if isinstance(chapter, dict)
+    }
+
+
+def learning_journal_item(
+    *,
+    kind: str,
+    chapter_id: str | None,
+    title: str,
+    locator: str,
+    content: str,
+    source_path: Path,
+    index: int,
+) -> dict[str, object]:
+    return {
+        "id": f"{source_path.name}:{index}",
+        "kind": kind,
+        "chapter_id": chapter_id,
+        "title": title,
+        "locator": locator,
+        "content": content.strip(),
+        "source_path": str(source_path),
+    }
+
+
+def parse_chapter_note_items(workspace: Path, titles: dict[str, str]) -> list[dict[str, object]]:
+    notes_dir = workspace / "chapter_notes"
+    if not notes_dir.exists():
+        return []
+    items: list[dict[str, object]] = []
+    for path in sorted(notes_dir.glob("*.md")):
+        chapter_id = path.name.split("-", 1)[0]
+        chapter_title = titles.get(chapter_id, chapter_id)
+        content = path.read_text(encoding="utf-8")
+        blocks = re.split(r"\n(?=### |## Quote\b)", content)
+        for block in blocks:
+            stripped = block.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("## Quote"):
+                body = re.sub(r"^## Quote\s*", "", stripped).strip()
+                items.append(
+                    learning_journal_item(
+                        kind="quote",
+                        chapter_id=chapter_id,
+                        title="Quote",
+                        locator=f"{chapter_id}: {chapter_title}",
+                        content=body,
+                        source_path=path,
+                        index=len(items) + 1,
+                    )
+                )
+                continue
+            heading_match = re.match(
+                r"###\s+(.+?)(?:\s+\d{4}-\d{2}-\d{2})?\n(.*)",
+                stripped,
+                re.S,
+            )
+            if not heading_match:
+                continue
+            note_type = heading_match.group(1).strip()
+            body = heading_match.group(2).strip()
+            kind = {
+                "Quote": "quote",
+                "Question": "question",
+                "AI Explanation": "note",
+                "My Thought": "note",
+            }.get(note_type, "note")
+            items.append(
+                learning_journal_item(
+                    kind=kind,
+                    chapter_id=chapter_id,
+                    title=note_type,
+                    locator=f"{chapter_id}: {chapter_title}",
+                    content=body,
+                    source_path=path,
+                    index=len(items) + 1,
+                )
+            )
+    return items
+
+
+def parse_review_card_items(workspace: Path) -> list[dict[str, object]]:
+    path = workspace / "review_cards.md"
+    content = read_text_if_exists(path)
+    items: list[dict[str, object]] = []
+    for match in re.finditer(r"- Q:\s*(.*?)\n\s*A:\s*(.*?)(?=\n- Q:|\Z)", content, re.S):
+        question = match.group(1).strip()
+        answer = match.group(2).strip()
+        if not question and not answer:
+            continue
+        items.append(
+            learning_journal_item(
+                kind="review_card",
+                chapter_id=None,
+                title="Review Card",
+                locator="review_cards.md",
+                content=f"Q: {question}\nA: {answer}",
+                source_path=path,
+                index=len(items) + 1,
+            )
+        )
+    return items
+
+
+def parse_evidence_card_items(workspace: Path) -> list[dict[str, object]]:
+    path = workspace / "evidence_cards.md"
+    items: list[dict[str, object]] = []
+    for index, card in enumerate(build_evidence_table(workspace).get("cards", []), start=1):
+        if not isinstance(card, dict):
+            continue
+        claim = str(card.get("claim", "")).strip()
+        support = str(card.get("support", "")).strip()
+        locator = str(card.get("source_locator", "")).strip() or "evidence_cards.md"
+        if not claim and not support:
+            continue
+        items.append(
+            learning_journal_item(
+                kind="evidence_card",
+                chapter_id=None,
+                title=claim or "Evidence Card",
+                locator=locator,
+                content="\n".join(
+                    [
+                        f"Claim: {claim}",
+                        f"Support: {support}",
+                        f"Confidence: {card.get('confidence', '')}",
+                        f"Not explicit: {card.get('not_explicit', '')}",
+                        f"Inference: {card.get('inference', '')}",
+                    ]
+                ),
+                source_path=path,
+                index=index,
+            )
+        )
+    return items
+
+
+def parse_evidence_context_items(workspace: Path) -> list[dict[str, object]]:
+    path = workspace / "evidence_context.md"
+    content = read_text_if_exists(path)
+    items: list[dict[str, object]] = []
+    for index, block in enumerate(re.split(r"\n(?=## Evidence Context\b)", content), start=1):
+        stripped = block.strip()
+        if not stripped.startswith("## Evidence Context"):
+            continue
+        query_match = re.search(r"\*\*Query\*\*\s*(.+)", stripped)
+        query = query_match.group(1).strip() if query_match else "Evidence Context"
+        items.append(
+            learning_journal_item(
+                kind="evidence_context",
+                chapter_id=None,
+                title=query,
+                locator="evidence_context.md",
+                content=stripped,
+                source_path=path,
+                index=index,
+            )
+        )
+    return items
+
+
+def parse_weak_concept_items(workspace: Path, titles: dict[str, str]) -> list[dict[str, object]]:
+    path = workspace / LEARNING_LOOP_FILE
+    items: list[dict[str, object]] = []
+    weak_concepts = load_learning_loop_state(workspace).get("weak_concepts", [])
+    for index, item in enumerate(weak_concepts, start=1):
+        if not isinstance(item, dict):
+            continue
+        chapter_id = str(item.get("chapter_id", "")).strip() or None
+        concept = str(item.get("concept", "")).strip()
+        note = str(item.get("note", "")).strip()
+        if not concept:
+            continue
+        items.append(
+            learning_journal_item(
+                kind="weak_concept",
+                chapter_id=chapter_id,
+                title=concept,
+                locator=f"{chapter_id}: {titles.get(chapter_id or '', '')}".strip(": "),
+                content=note or concept,
+                source_path=path,
+                index=index,
+            )
+        )
+    return items
+
+
+def build_learning_journal(workspace: Path) -> dict[str, object]:
+    ensure_workspace(workspace)
+    titles = chapter_title_map(workspace)
+    items = [
+        *parse_chapter_note_items(workspace, titles),
+        *parse_review_card_items(workspace),
+        *parse_evidence_card_items(workspace),
+        *parse_evidence_context_items(workspace),
+        *parse_weak_concept_items(workspace, titles),
+    ]
+    groups: dict[str, int] = {}
+    for item in items:
+        kind = str(item["kind"])
+        groups[kind] = groups.get(kind, 0) + 1
+    return {
+        "workspace": str(workspace),
+        "items": items,
+        "groups": groups,
+        "chapters": [
+            {"id": chapter_id, "title": title, "state": ""}
+            for chapter_id, title in titles.items()
+        ],
+    }
+
+
 def load_learning_loop_state(workspace: Path) -> dict[str, object]:
     path = workspace / LEARNING_LOOP_FILE
     if not path.exists():

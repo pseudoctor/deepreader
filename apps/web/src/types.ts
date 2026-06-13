@@ -5,6 +5,10 @@ export type Chapter = {
   state: string;
 };
 
+export type MainView = "reader" | "journal" | "map";
+
+export type ReadingFontSize = "small" | "medium" | "large";
+
 export type Status = {
   workspace: string;
   sources: number;
@@ -160,6 +164,28 @@ export type EvidenceContextMatch = {
 export type EvidenceContextResult = {
   query: string;
   matches: EvidenceContextMatch[];
+};
+
+export type LearningJournalItem = {
+  id: string;
+  kind: string;
+  chapter_id: string | null;
+  title: string;
+  locator: string;
+  content: string;
+  source_path: string;
+};
+
+export type LearningJournalResult = {
+  workspace: string;
+  items: LearningJournalItem[];
+  groups: Record<string, number>;
+  chapters: ChapterSummary[];
+};
+
+export type LearningJournalFilter = {
+  kind: string;
+  chapter_id: string;
 };
 
 export type WorkspaceLibraryItem = {

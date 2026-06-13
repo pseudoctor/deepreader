@@ -233,6 +233,40 @@ def test_learning_loop_endpoint_returns_mastery_status(tmp_path: Path) -> None:
     assert data["review_ready"][0]["id"] == "ch01"
 
 
+def test_learning_journal_endpoint_returns_saved_items(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/notes",
+        json={
+            "workspace": str(workspace),
+            "chapter_id": "ch01",
+            "section": "Confusions",
+            "note_type": "Question",
+            "text": "Why does this pattern matter?",
+        },
+    )
+    assert response.status_code == 200
+
+    response = client.get("/learning-journal", params={"workspace": str(workspace)})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["workspace"] == str(workspace)
+    assert data["groups"]["question"] == 1
+    assert data["items"][0]["kind"] == "question"
+
+
+def test_learning_journal_endpoint_rejects_missing_workspace(tmp_path: Path) -> None:
+    client = TestClient(app)
+
+    response = client.get("/learning-journal", params={"workspace": str(tmp_path / "missing")})
+
+    assert response.status_code == 400
+    assert "Workspace not found" in response.json()["error"]
+
+
 def test_weak_concepts_endpoint_updates_learning_loop(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     client = TestClient(app)

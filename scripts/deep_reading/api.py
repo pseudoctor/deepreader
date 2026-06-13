@@ -27,6 +27,7 @@ from .service import (
     build_concept_map,
     build_evidence_context,
     build_evidence_table,
+    build_learning_journal,
     build_one_page_book_account,
     check_feynman_summary,
     explain_selection,
@@ -245,6 +246,11 @@ def status(workspace: WorkspaceQuery) -> dict[str, object]:
 @app.get("/learning-loop")
 def learning_loop(workspace: WorkspaceQuery) -> dict[str, object]:
     return get_status(workspace)["learning_loop"]  # type: ignore[return-value]
+
+
+@app.get("/learning-journal")
+def learning_journal(workspace: WorkspaceQuery) -> dict[str, object]:
+    return build_learning_journal(workspace)
 
 
 @app.get("/chapters")

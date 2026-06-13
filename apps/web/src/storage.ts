@@ -1,5 +1,5 @@
 import type { Language, SelectionOutputLanguage } from "./i18n";
-import type { WorkspaceLibraryItem } from "./types";
+import type { ReadingFontSize, WorkspaceLibraryItem } from "./types";
 
 export function getInitialLanguage(): Language {
   const storedLanguage = window.localStorage.getItem("deep-reading-language");
@@ -52,4 +52,9 @@ export function getInitialWorkspaceLibrary(): WorkspaceLibraryItem[] {
 export function getInitialSelectionOutputLanguage(): SelectionOutputLanguage {
   const storedLanguage = window.localStorage.getItem("deep-reading-selection-output-language");
   return storedLanguage === "zh" || storedLanguage === "en" ? storedLanguage : "auto";
+}
+
+export function getInitialReadingFontSize(): ReadingFontSize {
+  const storedSize = window.localStorage.getItem("deep-reading-font-size");
+  return storedSize === "small" || storedSize === "large" ? storedSize : "medium";
 }
