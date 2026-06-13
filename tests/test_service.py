@@ -12,8 +12,10 @@ from deep_reading.service import (
     add_weak_concept,
     build_book_argument_map,
     build_concept_map,
+    build_evidence_context,
     build_evidence_table,
     build_one_page_book_account,
+    build_reading_guide,
     check_feynman_summary,
     explain_selection,
     export_obsidian,
@@ -175,9 +177,23 @@ def test_read_chapter_returns_structured_text(tmp_path: Path) -> None:
     assert "Chapter 1 Intro" in str(chapter["text"])
     assert "Chapter 2 Practice" not in str(chapter["text"])
     guide = chapter["reading_guide"]
-    assert guide["core_question"].startswith("What problem")
+    assert "This is a short sample" in guide["core_question"]
+    assert "This is a short sample" in guide["evidence_to_seek"]
     assert "evidence" in guide["evidence_to_seek"].casefold()
     assert "3-5 sentences" in guide["recall_prompt"]
+
+
+def test_build_reading_guide_uses_chinese_for_cjk_text() -> None:
+    guide = build_reading_guide(
+        "ch01",
+        "导论",
+        "为什么读书需要先提出问题？因为问题会改变我们寻找证据的方式。",
+    )
+
+    assert "阅读 ch01: 导论" in guide["core_question"]
+    assert "具体证据" in guide["evidence_to_seek"]
+    assert "3-5 句话" in guide["recall_prompt"]
+    assert "What" not in guide["core_question"]
 
 
 def test_synthesize_chapter_window_returns_cross_chapter_prompts(tmp_path: Path) -> None:
@@ -300,6 +316,53 @@ def test_save_evidence_table_writes_markdown_table(tmp_path: Path) -> None:
     assert "# Evidence Table" in content
     assert "| Claim | Source Locator | Support | Confidence | Not Explicit | Inference |" in content
     assert "| Claim | ch01: Intro | Support | Medium | TBD | TBD |" in content
+
+
+def test_build_evidence_context_matches_chapter_text(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    result = build_evidence_context(workspace, "short sample", "ch01")
+
+    assert result["query"] == "short sample"
+    matches = result["matches"]
+    assert matches
+    assert matches[0]["source_type"] == "chapter"
+    assert matches[0]["locator"] == "ch01: Intro"
+    assert "short sample" in matches[0]["snippet"]
+
+
+def test_build_evidence_context_matches_evidence_cards(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    add_evidence_card(
+        workspace,
+        "The chapter frames comparison.",
+        "ch01: Intro",
+        "A source detail supports comparison.",
+        "High",
+    )
+
+    result = build_evidence_context(workspace, "frames comparison", "ch01")
+
+    assert any(
+        match["source_type"] == "evidence_card"
+        and "frames comparison" in str(match["snippet"])
+        for match in result["matches"]
+    )
+
+
+def test_build_evidence_context_rejects_empty_query(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    with pytest.raises(ExtractionError, match="Evidence context query cannot be empty"):
+        build_evidence_context(workspace, " ")
+
+
+def test_build_evidence_context_respects_limit(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    result = build_evidence_context(workspace, "chapter", limit=1)
+
+    assert len(result["matches"]) == 1
 
 
 def test_build_concept_map_uses_chapters_evidence_and_weak_concepts(tmp_path: Path) -> None:
@@ -433,6 +496,26 @@ def test_selection_actions_use_chinese_templates_for_chinese_text(tmp_path: Path
 
     explanation = explain_selection(workspace, "ch01", "這段文字支持一個因果推論。")
     review = generate_selection_review_question(workspace, "ch01", "這段文字支持一個因果推論。")
+
+    assert "怎么读这段" in explanation["explanation"]
+    assert "支持了什么主张或因果链" in review["question"]
+
+
+def test_selection_actions_can_force_chinese_for_english_text(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    explanation = explain_selection(
+        workspace,
+        "ch01",
+        "This is a short sample.",
+        language="zh",
+    )
+    review = generate_selection_review_question(
+        workspace,
+        "ch01",
+        "This is a short sample.",
+        language="zh",
+    )
 
     assert "怎么读这段" in explanation["explanation"]
     assert "支持了什么主张或因果链" in review["question"]

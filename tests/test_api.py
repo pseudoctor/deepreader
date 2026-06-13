@@ -112,7 +112,8 @@ def test_llm_models_endpoint_returns_model_catalog() -> None:
     assert data["provider"] == "claude"
     assert data["source"] == "fallback"
     assert data["reason"] == "recommended_only"
-    assert data["models"][0]["value"] == "claude-sonnet-4.6"
+    assert data["models"][0]["value"] == "claude-opus-4-8"
+    assert data["models"][1]["value"] == "claude-sonnet-4-6"
 
 
 def test_llm_models_endpoint_rejects_unknown_provider() -> None:
@@ -166,7 +167,7 @@ def test_chapter_text_endpoint_returns_one_chapter(tmp_path: Path) -> None:
     assert data["id"] == "ch01"
     assert "Chapter 1 Intro" in data["text"]
     assert "Chapter 2 Practice" not in data["text"]
-    assert data["reading_guide"]["core_question"].startswith("What problem")
+    assert "This is a short sample" in data["reading_guide"]["core_question"]
     assert "evidence" in data["reading_guide"]["evidence_to_seek"].casefold()
     assert "3-5 sentences" in data["reading_guide"]["recall_prompt"]
 
@@ -388,6 +389,25 @@ def test_selection_explanation_endpoint_returns_note_draft(tmp_path: Path) -> No
     data = response.json()
     assert data["chapter_id"] == "ch01"
     assert "How to read it:" in data["explanation"]
+
+
+def test_selection_explanation_endpoint_accepts_output_language(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/selection-explanation",
+        json={
+            "workspace": str(workspace),
+            "chapter_id": "ch01",
+            "selected_text": "This is a short sample.",
+            "language": "zh",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "怎么读这段" in data["explanation"]
 
 
 def test_selection_review_question_endpoint_returns_card_draft(tmp_path: Path) -> None:
@@ -687,6 +707,51 @@ def test_evidence_cards_endpoint_appends_card(tmp_path: Path) -> None:
     content = Path(data["path"]).read_text(encoding="utf-8")
     assert "The chapter starts with a comparison problem." in content
     assert "**Confidence** High" in content
+
+
+def test_evidence_context_endpoint_returns_grounded_matches(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+    client.post(
+        "/evidence-cards",
+        json={
+            "workspace": str(workspace),
+            "claim": "The chapter frames comparison.",
+            "locator": "ch01: Intro",
+            "support": "A source detail supports comparison.",
+            "confidence": "High",
+        },
+    )
+
+    response = client.post(
+        "/evidence-context",
+        json={
+            "workspace": str(workspace),
+            "chapter_id": "ch01",
+            "query": "comparison",
+            "limit": 2,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["query"] == "comparison"
+    assert len(data["matches"]) <= 2
+    assert {match["source_type"] for match in data["matches"]} & {"chapter", "evidence_card"}
+    assert all(match["locator"] for match in data["matches"])
+
+
+def test_evidence_context_endpoint_rejects_empty_query(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/evidence-context",
+        json={"workspace": str(workspace), "query": " "},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "Evidence context query cannot be empty"
 
 
 def test_obsidian_export_endpoint_exports_workspace_markdown(tmp_path: Path) -> None:

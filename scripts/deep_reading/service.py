@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from .errors import ExtractionError
@@ -294,8 +295,93 @@ def build_continue_reading(
     }
 
 
-def build_reading_guide(chapter_id: str, title: str) -> dict[str, str]:
+def clean_chapter_sentences(text: str) -> list[str]:
+    cleaned_lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if re.match(r"^chapter\s*\d+\b", stripped, flags=re.IGNORECASE):
+            continue
+        cleaned_lines.append(stripped)
+    cleaned_text = " ".join(cleaned_lines)
+    chunks = re.split(r"(?<=[.!?。！？])\s*", cleaned_text)
+    return [chunk.strip() for chunk in chunks if chunk.strip()]
+
+
+def contains_cjk(text: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in text)
+
+
+def build_reading_guide(chapter_id: str, title: str, text: str = "") -> dict[str, str]:
     chapter_label = f"{chapter_id}: {title}"
+    sentences = clean_chapter_sentences(text)
+    first_sentence = sentences[0] if sentences else ""
+    use_chinese = contains_cjk(f"{title}\n{text}")
+    question_sentence = next(
+        (sentence for sentence in sentences if "?" in sentence or "？" in sentence),
+        "",
+    )
+    causal_sentence = next(
+        (
+            sentence
+            for sentence in sentences
+            if any(
+                marker in sentence.casefold()
+                for marker in (
+                    "because",
+                    "therefore",
+                    "causes",
+                    "leads to",
+                    "why",
+                    "因",
+                    "所以",
+                    "导致",
+                )
+            )
+        ),
+        "",
+    )
+
+    if first_sentence:
+        focus = question_sentence or first_sentence
+        evidence_focus = causal_sentence or first_sentence
+        if use_chinese:
+            return {
+                "core_question": (
+                    f"阅读 {chapter_label} 时，先想清楚它要你解释"
+                    f"“{focus[:120]}”里的什么问题？"
+                ),
+                "evidence_to_seek": (
+                    "寻找支撑这一段的具体证据、比较、定义或因果链："
+                    f"“{evidence_focus[:120]}”。"
+                ),
+                "recall_prompt": (
+                    f"读完 {chapter_label} 后，用 3-5 句话复述本章主张，"
+                    "并写出一个改变你理解的例子。"
+                ),
+            }
+        return {
+            "core_question": (
+                f"What is {chapter_label} asking you to explain about \"{focus[:120]}\"?"
+            ),
+            "evidence_to_seek": (
+                "Find the concrete evidence, comparison, definition, or causal link behind "
+                f"\"{evidence_focus[:120]}\"."
+            ),
+            "recall_prompt": (
+                f"After reading {chapter_label}, explain the main claim in 3-5 sentences "
+                "and cite one example that changed your view."
+            ),
+        }
+
+    if use_chinese:
+        return {
+            "core_question": f"{chapter_label} 想澄清什么问题、变化或矛盾？",
+            "evidence_to_seek": "哪些证据、具体例子、比较、定义或因果链支撑了本章的核心主张？",
+            "recall_prompt": "读完后，用 3-5 句话复述本章主张，并指出一个支撑它的证据。",
+        }
+
     return {
         "core_question": f"What problem or shift is {chapter_label} trying to clarify?",
         "evidence_to_seek": (
@@ -809,6 +895,213 @@ def save_concept_map(workspace: Path, result: dict[str, object]) -> dict[str, st
     return {"kind": "concept_map", "path": str(path)}
 
 
+def tokenize_query(query: str) -> list[str]:
+    return [
+        token.casefold()
+        for token in re.findall(r"[\w'-]+|[\u4e00-\u9fff]+", query)
+        if len(token.strip()) >= 2
+    ]
+
+
+def compact_snippet(text: str, limit: int = 420) -> str:
+    cleaned = re.sub(r"\s+", " ", text).strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: limit - 3].rstrip() + "..."
+
+
+def evidence_context_score(text: str, query: str, tokens: list[str]) -> int:
+    lowered = text.casefold()
+    score = 0
+    stripped_query = query.casefold().strip()
+    if stripped_query and stripped_query in lowered:
+        score += 8
+    for token in tokens:
+        score += lowered.count(token)
+    return score
+
+
+def add_evidence_context_candidate(
+    matches: list[dict[str, object]],
+    *,
+    source_type: str,
+    locator: str,
+    text: str,
+    query: str,
+    tokens: list[str],
+    chapter_id: str | None = None,
+    title: str | None = None,
+) -> None:
+    score = evidence_context_score(text, query, tokens)
+    if score <= 0:
+        return
+    matches.append(
+        {
+            "source_type": source_type,
+            "locator": locator,
+            "chapter_id": chapter_id,
+            "title": title,
+            "snippet": compact_snippet(text),
+            "score": score,
+        }
+    )
+
+
+def chapter_context_candidates(
+    workspace: Path,
+    query: str,
+    tokens: list[str],
+    chapter_id: str | None,
+) -> list[dict[str, object]]:
+    metadata = load_metadata(workspace)
+    chapters = metadata.get("chapters", [])
+    if chapter_id is not None:
+        get_chapter(workspace, chapter_id)
+
+    matches: list[dict[str, object]] = []
+    for chapter in chapters:
+        current_id = str(chapter["id"])
+        if chapter_id is not None and current_id != chapter_id:
+            continue
+        text = get_chapter_text(workspace, current_id)
+        chunks = [
+            chunk.strip()
+            for chunk in re.split(r"\n\s*\n|(?<=[.!?。！？])\s+", text)
+            if chunk.strip()
+        ]
+        for chunk in chunks:
+            add_evidence_context_candidate(
+                matches,
+                source_type="chapter",
+                locator=f"{current_id}: {chapter['title']}",
+                chapter_id=current_id,
+                title=str(chapter["title"]),
+                text=chunk,
+                query=query,
+                tokens=tokens,
+            )
+    return matches
+
+
+def evidence_card_context_candidates(
+    workspace: Path,
+    query: str,
+    tokens: list[str],
+    chapter_id: str | None,
+) -> list[dict[str, object]]:
+    matches: list[dict[str, object]] = []
+    table = build_evidence_table(workspace)
+    for card in table["cards"]:
+        if not isinstance(card, dict):
+            continue
+        locator = str(card.get("source_locator", "")).strip()
+        if chapter_id is not None and chapter_id not in locator:
+            continue
+        text = " ".join(
+            str(card.get(field, "")).strip()
+            for field in ("claim", "support", "not_explicit", "inference")
+            if str(card.get(field, "")).strip()
+        )
+        add_evidence_context_candidate(
+            matches,
+            source_type="evidence_card",
+            locator=locator or "evidence_cards.md",
+            chapter_id=chapter_id,
+            title=None,
+            text=text,
+            query=query,
+            tokens=tokens,
+        )
+    return matches
+
+
+def chapter_note_context_candidates(
+    workspace: Path,
+    query: str,
+    tokens: list[str],
+    chapter_id: str | None,
+) -> list[dict[str, object]]:
+    metadata = load_metadata(workspace)
+    matches: list[dict[str, object]] = []
+    for chapter in metadata.get("chapters", []):
+        current_id = str(chapter["id"])
+        if chapter_id is not None and current_id != chapter_id:
+            continue
+        path = chapter_note_path(workspace, current_id)
+        if not path.exists():
+            continue
+        chunks = [
+            chunk.strip()
+            for chunk in re.split(r"\n(?=##+ )|\n\s*\n", path.read_text(encoding="utf-8"))
+            if chunk.strip()
+        ]
+        for chunk in chunks:
+            add_evidence_context_candidate(
+                matches,
+                source_type="chapter_note",
+                locator=f"{current_id}: {chapter['title']} note",
+                chapter_id=current_id,
+                title=str(chapter["title"]),
+                text=chunk,
+                query=query,
+                tokens=tokens,
+            )
+    return matches
+
+
+def build_evidence_context(
+    workspace: Path,
+    query: str,
+    chapter_id: str | None = None,
+    limit: int = 5,
+) -> dict[str, object]:
+    ensure_workspace(workspace)
+    stripped_query = query.strip()
+    if not stripped_query:
+        raise ExtractionError("Evidence context query cannot be empty")
+    if limit < 1:
+        raise ExtractionError("Evidence context limit must be at least 1")
+
+    tokens = tokenize_query(stripped_query)
+    if not tokens:
+        tokens = [stripped_query.casefold()]
+    safe_limit = min(limit, 20)
+    matches: list[dict[str, object]] = []
+    matches.extend(chapter_context_candidates(workspace, stripped_query, tokens, chapter_id))
+    matches.extend(evidence_card_context_candidates(workspace, stripped_query, tokens, chapter_id))
+    matches.extend(chapter_note_context_candidates(workspace, stripped_query, tokens, chapter_id))
+    matches.sort(
+        key=lambda item: (
+            -int(item["score"]),
+            str(item["source_type"]),
+            str(item["locator"]),
+        )
+    )
+    return {
+        "query": stripped_query,
+        "matches": matches[:safe_limit],
+    }
+
+
+def attach_evidence_context(
+    workspace: Path,
+    chapter: dict[str, object],
+    query: str,
+) -> dict[str, object]:
+    if not query.strip():
+        return {**chapter, "evidence_context": ""}
+    context = build_evidence_context(workspace, query, str(chapter["id"]), 3)
+    evidence_lines = [
+        f"- {match['locator']}: {match['snippet']}"
+        for match in context["matches"]
+        if isinstance(match, dict)
+    ]
+    return {
+        **chapter,
+        "evidence_context": "\n".join(evidence_lines),
+    }
+
+
 def save_book_argument_map(workspace: Path, result: dict[str, object]) -> dict[str, str]:
     ensure_workspace(workspace)
     path = workspace / "argument_maps.md"
@@ -880,27 +1173,40 @@ def save_active_recall_cards(workspace: Path, result: dict[str, object]) -> dict
 
 def read_chapter(workspace: Path, chapter_id: str) -> dict[str, object]:
     chapter = get_chapter(workspace, chapter_id)
+    text = get_chapter_text(workspace, chapter_id)
     return {
         "id": chapter["id"],
         "title": chapter["title"],
         "line": chapter["line"],
-        "text": get_chapter_text(workspace, chapter_id),
-        "reading_guide": build_reading_guide(chapter["id"], chapter["title"]),
+        "text": text,
+        "reading_guide": build_reading_guide(chapter["id"], chapter["title"], text),
     }
 
 
 def check_feynman_summary(workspace: Path, chapter_id: str, summary: str) -> dict[str, object]:
     chapter = get_chapter(workspace, chapter_id)
     try:
-        return build_provider().check_feynman_summary(chapter, summary)
+        return build_provider().check_feynman_summary(
+            attach_evidence_context(workspace, chapter, summary),
+            summary,
+        )
     except (RuntimeError, ValueError) as exc:
         raise ExtractionError(str(exc)) from exc
 
 
-def explain_selection(workspace: Path, chapter_id: str, selected_text: str) -> dict[str, str]:
+def explain_selection(
+    workspace: Path,
+    chapter_id: str,
+    selected_text: str,
+    language: str | None = None,
+) -> dict[str, str]:
     chapter = get_chapter(workspace, chapter_id)
     try:
-        return build_provider().explain_selection(chapter, selected_text)
+        return build_provider().explain_selection(
+            attach_evidence_context(workspace, chapter, selected_text),
+            selected_text,
+            language,
+        )
     except (RuntimeError, ValueError) as exc:
         raise ExtractionError(str(exc)) from exc
 
@@ -909,10 +1215,11 @@ def generate_selection_review_question(
     workspace: Path,
     chapter_id: str,
     selected_text: str,
+    language: str | None = None,
 ) -> dict[str, str]:
     chapter = get_chapter(workspace, chapter_id)
     try:
-        return build_provider().generate_selection_review_question(chapter, selected_text)
+        return build_provider().generate_selection_review_question(chapter, selected_text, language)
     except (RuntimeError, ValueError) as exc:
         raise ExtractionError(str(exc)) from exc
 

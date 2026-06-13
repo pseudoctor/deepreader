@@ -1,253 +1,47 @@
 import React, { FormEvent, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { apiRequest } from "./api";
+import { formatChapterSynthesis, formatFeynmanFeedback } from "./formatters";
+import {
+  languages,
+  selectionOutputLanguages,
+  translations,
+  type Language,
+  type SelectionOutputLanguage,
+} from "./i18n";
+import {
+  getInitialLanguage,
+  getInitialObsidianFolder,
+  getInitialSelectionOutputLanguage,
+  getInitialWorkspaceLibrary,
+} from "./storage";
+import type {
+  ActiveRecallResult,
+  BookArgumentMapResult,
+  Chapter,
+  ChapterSynthesisResult,
+  ChapterText,
+  ConceptMapResult,
+  EvidenceContextMatch,
+  EvidenceContextResult,
+  EvidenceTableResult,
+  FeynmanCheckResult,
+  LLMModelCatalog,
+  LLMProviderList,
+  LLMProviderStatus,
+  LearningLoop,
+  NextAction,
+  ObsidianExportResult,
+  OnePageBookAccountResult,
+  SelectionExplanationResult,
+  SelectionReviewQuestionResult,
+  SelectionToolbarPosition,
+  Status,
+  WorkspaceLibraryItem,
+} from "./types";
 import "./styles.css";
 
-type Chapter = {
-  id: string;
-  title: string;
-  line: number;
-  state: string;
-};
-
-type Status = {
-  workspace: string;
-  sources: number;
-  words: number;
-  estimated_tokens: number;
-  current: string | null;
-  progress: Record<string, number>;
-  continue_reading: ContinueReading;
-  learning_loop: LearningLoop;
-  artifacts: Record<string, boolean>;
-};
-
-type ChapterSummary = {
-  id: string;
-  title: string;
-  state: string;
-};
-
-type NextAction = {
-  kind: "continue_current" | "review_completed" | "start_next" | "synthesize_book";
-  chapter_id: string | null;
-  title: string | null;
-};
-
-type ContinueReading = {
-  current_chapter: ChapterSummary | null;
-  review_due: ChapterSummary[];
-  next_action: NextAction;
-};
-
-type LearningLoopChapter = ChapterSummary & {
-  mastery_score: number;
-  has_notes: boolean;
-  has_active_recall: boolean;
-  has_evidence: boolean;
-  weak_reasons: string[];
-};
-
-type WeakConcept = {
-  concept: string;
-  chapter_id: string;
-  title: string;
-  note: string;
-};
-
-type LearningLoop = {
-  chapters: LearningLoopChapter[];
-  weak_chapters: LearningLoopChapter[];
-  weak_concepts: WeakConcept[];
-  review_ready: LearningLoopChapter[];
-  synthesis_due: boolean;
-  completed_count: number;
-  average_mastery: number;
-};
-
-type ChapterText = {
-  id: string;
-  title: string;
-  line: number;
-  text: string;
-  reading_guide: {
-    core_question: string;
-    evidence_to_seek: string;
-    recall_prompt: string;
-  };
-};
-
-type ObsidianExportResult = {
-  vault_folder: string;
-  markdown_files_exported: number;
-  index_path: string;
-  files: string[];
-};
-
-type FeynmanCheckResult = {
-  chapter_id: string;
-  title: string;
-  accurate_points: string[];
-  vague_points: string[];
-  missing_causal_links: string[];
-  unsupported_leaps: string[];
-  rewritten_version: string;
-};
-
-type SelectionExplanationResult = {
-  chapter_id: string;
-  title: string;
-  explanation: string;
-};
-
-type SelectionReviewQuestionResult = {
-  chapter_id: string;
-  title: string;
-  question: string;
-  answer: string;
-};
-
-type ChapterSynthesisResult = {
-  start_chapter_id: string;
-  chapter_count: number;
-  chapters: ChapterSummary[];
-  common_question: string;
-  recurring_concepts: string[];
-  argument_progression: string;
-  open_questions: string[];
-};
-
-type BookArgumentMapResult = {
-  chapter_count: number;
-  chapters: ChapterSummary[];
-  core_problem: string;
-  core_answer: string;
-  argument_chain: string[];
-  key_evidence: string[];
-  rebuttals_and_limits: string[];
-};
-
-type OnePageBookAccountResult = {
-  title: string;
-  chapter_count: number;
-  completed_count: number;
-  average_mastery: number;
-  core_account: string;
-  core_argument_chain: string[];
-  strongest_evidence: string[];
-  weak_points: string[];
-  application_prompts: string[];
-};
-
-type EvidenceTableCard = {
-  claim: string;
-  source_locator: string;
-  support: string;
-  confidence: string;
-  not_explicit: string;
-  inference: string;
-};
-
-type EvidenceTableResult = {
-  card_count: number;
-  cards: EvidenceTableCard[];
-};
-
-type ConceptMapNode = {
-  id: string;
-  label: string;
-  type: string;
-  state: string;
-  mastery_score: number;
-};
-
-type ConceptMapLink = {
-  source: string;
-  target: string;
-  relation: string;
-  evidence: string;
-};
-
-type ConceptMapResult = {
-  node_count: number;
-  link_count: number;
-  nodes: ConceptMapNode[];
-  links: ConceptMapLink[];
-};
-
-type ActiveRecallQuestion = {
-  question: string;
-  answer_hint: string;
-};
-
-type ActiveRecallResult = {
-  chapter_id: string;
-  title: string;
-  state: string;
-  questions: ActiveRecallQuestion[];
-  eligible_for_review: boolean;
-  chapter_count: number;
-};
-
-type SelectionToolbarPosition = {
-  left: number;
-  top: number;
-};
-
-type DeepReadingDesktopApi = {
-  apiBaseUrl: string;
-  platform: string;
-  selectWorkspaceFolder: () => Promise<string | null>;
-  selectSourcePath: () => Promise<string | null>;
-  selectWorkspaceTargetFolder: () => Promise<string | null>;
-  createWorkspaceFromSource: (sourcePath: string, workspacePath: string) => Promise<string>;
-  selectObsidianFolder: () => Promise<string | null>;
-};
-
-type LLMProviderStatus = {
-  name: string;
-  display_name: string;
-  configured: boolean;
-  api_key_env: string | null;
-  api_key_present: boolean;
-  base_url_env: string;
-  base_url: string | null;
-  model_env: string;
-  model: string;
-  fallback_models: LLMModelOption[];
-  selected_env: string;
-};
-
-type LLMProviderList = {
-  selected: string;
-  providers: LLMProviderStatus[];
-};
-
-type LLMModelOption = {
-  value: string;
-  label: string;
-};
-
-type LLMModelCatalog = {
-  provider: string;
-  models: LLMModelOption[];
-  source: "remote" | "fallback";
-  reason: string | null;
-};
-
-declare global {
-  interface Window {
-    deepReadingDesktop?: DeepReadingDesktopApi;
-  }
-}
-
 const defaultWorkspace = "workspaces/guns-germs-steel-reading";
-
-type Language = "en" | "zh";
-
-const languages: { code: Language; label: string }[] = [
-  { code: "en", label: "EN" },
-  { code: "zh", label: "中文" },
-];
 
 const noteSectionOptions = [
   "Confusions",
@@ -262,562 +56,17 @@ const confidenceOptions = ["High", "Medium", "Low"] as const;
 
 const stateOptions = ["reading", "done", "review", "weak"] as const;
 
-const translations = {
-  en: {
-    appTitle: "Deep Reading",
-    appSubtitle: "Workspace reader",
-    language: "Language",
-    providerSettings: "AI provider",
-    settings: "Settings",
-    cancel: "Cancel",
-    provider: "Provider",
-    providerConfigured: "Configured",
-    providerNotConfigured: "Needs key",
-    providerKeyEnv: "API key",
-    providerModelEnv: "Model",
-    providerModelRefresh: "Refresh models",
-    providerModelSourceRemote: "Live model list",
-    providerModelSourceFallback: "Recommended models",
-    providerModelSourceAuth: "Add an API key and save to refresh live models",
-    providerModelSourceUnavailable: "Live model list unavailable; using recommendations",
-    providerBaseUrlEnv: "Base URL",
-    providerSelectedEnv: "Selected by",
-    providerLocalOnly: "Local mock does not require a key",
-    providerApiKeyInput: "API key",
-    providerApiKeyPlaceholder: "Paste key to save or leave blank to keep existing",
-    saveProviderSettings: "Save AI settings",
-    providerSettingsSaved: "AI provider updated",
-    failedLoadProviders: "Failed to load AI providers",
-    failedUpdateProvider: "Failed to update AI provider",
-    workspace: "Workspace",
-    newWorkspace: "New workspace",
-    sourcePath: "Source",
-    sourcePathPlaceholder: "/Users/me/Books/book.pdf",
-    selectSource: "Choose source",
-    workspaceTarget: "Save as",
-    workspaceTargetPlaceholder: "/Users/me/Reading/book-reading",
-    selectWorkspaceTarget: "Choose folder",
-    createWorkspace: "Create workspace",
-    selectWorkspace: "Choose folder",
-    load: "Load",
-    recentWorkspaces: "Recent workspaces",
-    noRecentWorkspaces: "No recent workspaces yet",
-    status: "Status",
-    learningLoop: "Learning loop",
-    averageMastery: "Average mastery",
-    weakChapters: "Weak chapters",
-    weakConcepts: "Weak concepts",
-    weakConcept: "Weak concept",
-    weakConceptPlaceholder: "Concept or mechanism you keep missing",
-    weakConceptNote: "Why it is weak",
-    weakConceptNotePlaceholder: "What still feels unclear?",
-    addWeakConcept: "Add weak concept",
-    reviewReady: "Review ready",
-    synthesisDue: "Three-chapter synthesis due",
-    noWeakChapters: "No weak chapters yet",
-    noWeakConcepts: "No weak concepts yet",
-    masteryScore: "Mastery",
-    export: "Export",
-    obsidianFolder: "Obsidian folder",
-    selectObsidianFolder: "Choose folder",
-    obsidianFolderPlaceholder: "/Users/me/ObsidianVault/Reading/book-name",
-    exportToObsidian: "Export to Obsidian",
-    noWorkspaceLoaded: "No workspace loaded",
-    continueReading: "Continue reading",
-    currentChapter: "Last position",
-    reviewDue: "{count} chapter(s) read but not reviewed",
-    nextStep: "Next step",
-    action_continue_current: "Continue current chapter",
-    action_review_completed: "Review completed chapter",
-    action_start_next: "Start next chapter",
-    action_synthesize_book: "Build book synthesis",
-    chapters: "Chapters",
-    chapter: "Chapter",
-    beforeReading: "Before reading",
-    coreQuestion: "Core question",
-    evidenceToSeek: "Evidence to seek",
-    afterReadingRecall: "After-reading recall",
-    noChapter: "No chapter",
-    emptyReader: "Load a workspace to start reading.",
-    capture: "Capture",
-    buildUnderstanding: "Build understanding",
-    captureType: "Capture type",
-    note: "Note",
-    review: "Review",
-    evidence: "Evidence",
-    feynman: "Feynman",
-    synthesis: "Synthesis",
-    bookMap: "Book Map",
-    feynmanSummary: "3-5 sentence summary",
-    feynmanSummaryPlaceholder: "Explain the chapter in your own words...",
-    checkSummary: "Check summary",
-    saveFeynmanFeedback: "Save feedback",
-    accuratePoints: "Accurate",
-    vaguePoints: "Too vague",
-    missingCausalLinks: "Missing causal links",
-    unsupportedLeaps: "Unsupported leaps",
-    rewrittenVersion: "Rewrite",
-    noFeedbackItems: "No issues found",
-    synthesisStart: "Start chapter",
-    synthesisCount: "Chapter count",
-    runSynthesis: "Run synthesis",
-    saveSynthesisFeedback: "Save synthesis",
-    commonQuestion: "Common question",
-    recurringConcepts: "Recurring concepts",
-    argumentProgression: "Argument progression",
-    openQuestions: "Open questions",
-    buildBookMap: "Build book map",
-    saveBookMap: "Save book map",
-    buildOnePageAccount: "Build one-page account",
-    saveOnePageAccount: "Save one-page account",
-    onePageAccount: "One-page account",
-    buildEvidenceTable: "Build evidence table",
-    saveEvidenceTable: "Save evidence table",
-    evidenceTableReady: "Evidence table ready",
-    evidenceTableSaved: "Evidence table saved",
-    evidenceTable: "Evidence table",
-    buildConceptMap: "Build concept map",
-    saveConceptMap: "Save concept map",
-    conceptMapReady: "Concept map ready",
-    conceptMapSaved: "Concept map saved",
-    conceptMap: "Concept map",
-    nodes: "Nodes",
-    links: "Links",
-    sourceLocator: "Source locator",
-    notExplicitShort: "Not explicit",
-    inference: "Inference",
-    strongestEvidence: "Strongest evidence",
-    weakPoints: "Weak points",
-    applicationPrompts: "Application prompts",
-    coreProblem: "Core problem",
-    coreAnswer: "Core answer",
-    argumentChain: "Argument chain",
-    keyEvidence: "Key evidence",
-    rebuttalsAndLimits: "Rebuttals and limits",
-    selectedText: "Selected text",
-    saveQuote: "Save quote",
-    makeEvidenceCard: "Make evidence card",
-    explainSelection: "Explain",
-    makeReviewQuestion: "Review Q",
-    noteType: "Note type",
-    section: "Section",
-    notePlaceholder: "Write a question, summary, or application...",
-    saveNote: "Save note",
-    question: "Question",
-    reviewQuestionPlaceholder: "What should future me recall?",
-    answer: "Answer",
-    reviewAnswerPlaceholder: "Write the answer in your own words...",
-    saveReviewCard: "Save review card",
-    activeRecall: "Active recall",
-    recallChapter: "Recall chapter",
-    generateRecall: "Generate recall",
-    saveAllRecallCards: "Save all recall cards",
-    recallNotCompleted: "This chapter is not marked done/review yet",
-    answerHint: "Answer hint",
-    claim: "Claim",
-    claimPlaceholder: "What claim does this passage support?",
-    locator: "Locator",
-    support: "Support",
-    supportPlaceholder: "Use a brief paraphrase or short excerpt...",
-    confidence: "Confidence",
-    notExplicit: "Not explicit",
-    notExplicitPlaceholder: "What does the source not prove?",
-    myInference: "My inference",
-    inferencePlaceholder: "What are you inferring from it?",
-    saveEvidenceCard: "Save evidence card",
-    working: "Working...",
-    workspaceLoaded: "Workspace loaded",
-    workspaceCreated: "Workspace created",
-    noteSaved: "Note saved",
-    reviewCardSaved: "Review card saved",
-    evidenceCardSaved: "Evidence card saved",
-    feynmanFeedbackSaved: "Feynman feedback saved",
-    explanationDrafted: "Explanation drafted",
-    reviewQuestionDrafted: "Review question drafted",
-    synthesisReady: "Synthesis ready",
-    synthesisSaved: "Synthesis saved",
-    bookMapReady: "Book map ready",
-    bookMapSaved: "Book map saved",
-    onePageAccountReady: "One-page account ready",
-    onePageAccountSaved: "One-page account saved",
-    activeRecallReady: "Active recall ready",
-    activeRecallSaved: "Active recall saved",
-    weakConceptSaved: "Weak concept saved",
-    quoteSaved: "Quote saved",
-    obsidianExported: "Exported {count} Markdown files to {folder}",
-    failedLoadWorkspace: "Failed to load workspace",
-    failedCreateWorkspace: "Failed to create workspace",
-    failedSelectSource: "Failed to choose source",
-    failedSelectWorkspaceTarget: "Failed to choose workspace folder",
-    failedLoadChapter: "Failed to load chapter",
-    failedSelectWorkspace: "Failed to choose workspace folder",
-    failedSelectObsidianFolder: "Failed to choose Obsidian folder",
-    failedUpdateState: "Failed to update state",
-    failedSaveNote: "Failed to save note",
-    failedSaveReviewCard: "Failed to save review card",
-    failedSaveEvidenceCard: "Failed to save evidence card",
-    failedCheckSummary: "Failed to check summary",
-    failedSaveFeynmanFeedback: "Failed to save Feynman feedback",
-    failedExplainSelection: "Failed to explain selection",
-    failedMakeReviewQuestion: "Failed to make review question",
-    failedRunSynthesis: "Failed to run synthesis",
-    failedSaveSynthesis: "Failed to save synthesis",
-    failedBuildBookMap: "Failed to build book map",
-    failedSaveBookMap: "Failed to save book map",
-    failedBuildOnePageAccount: "Failed to build one-page account",
-    failedSaveOnePageAccount: "Failed to save one-page account",
-    failedBuildEvidenceTable: "Failed to build evidence table",
-    failedSaveEvidenceTable: "Failed to save evidence table",
-    failedBuildConceptMap: "Failed to build concept map",
-    failedSaveConceptMap: "Failed to save concept map",
-    failedGenerateRecall: "Failed to generate active recall",
-    failedSaveRecall: "Failed to save active recall",
-    failedSaveQuote: "Failed to save quote",
-    failedObsidianExport: "Failed to export to Obsidian",
-    failedAddWeakConcept: "Failed to add weak concept",
-    requestFailed: "Request failed",
-    marked: "marked",
-    stateLabels: {
-      reading: "reading",
-      done: "done",
-      review: "review",
-      weak: "weak",
-    },
-    noteSectionLabels: {
-      Confusions: "Confusions",
-      "Key Concepts": "Key Concepts",
-      "My 3-5 Sentence Summary": "My 3-5 Sentence Summary",
-      Applications: "Applications",
-    },
-    noteTypeLabels: {
-      Quote: "Quote",
-      "My Thought": "My Thought",
-      "AI Explanation": "AI Explanation",
-      Question: "Question",
-    },
-    confidenceLabels: {
-      High: "High",
-      Medium: "Medium",
-      Low: "Low",
-    },
-  },
-  zh: {
-    appTitle: "深度阅读",
-    appSubtitle: "工作区阅读器",
-    language: "语言",
-    providerSettings: "AI 接口",
-    settings: "设置",
-    cancel: "取消",
-    provider: "供应商",
-    providerConfigured: "已配置",
-    providerNotConfigured: "需要 key",
-    providerKeyEnv: "API key",
-    providerModelEnv: "模型",
-    providerModelRefresh: "刷新模型",
-    providerModelSourceRemote: "实时模型列表",
-    providerModelSourceFallback: "推荐模型",
-    providerModelSourceAuth: "填写 API key 并保存后可刷新实时模型",
-    providerModelSourceUnavailable: "实时模型列表不可用，已使用推荐模型",
-    providerBaseUrlEnv: "Base URL",
-    providerSelectedEnv: "当前选择",
-    providerLocalOnly: "本地 mock 不需要 key",
-    providerApiKeyInput: "API key",
-    providerApiKeyPlaceholder: "粘贴 key 后保存；留空则保留已有 key",
-    saveProviderSettings: "保存 AI 设置",
-    providerSettingsSaved: "AI 接口已更新",
-    failedLoadProviders: "载入 AI 接口失败",
-    failedUpdateProvider: "更新 AI 接口失败",
-    workspace: "工作区",
-    newWorkspace: "新建工作区",
-    sourcePath: "源文件",
-    sourcePathPlaceholder: "/Users/me/Books/book.pdf",
-    selectSource: "选择源文件",
-    workspaceTarget: "保存为",
-    workspaceTargetPlaceholder: "/Users/me/Reading/book-reading",
-    selectWorkspaceTarget: "选择文件夹",
-    createWorkspace: "创建工作区",
-    selectWorkspace: "选择文件夹",
-    load: "载入",
-    recentWorkspaces: "最近工作区",
-    noRecentWorkspaces: "暂无最近工作区",
-    status: "状态",
-    learningLoop: "学习循环",
-    averageMastery: "平均掌握度",
-    weakChapters: "薄弱章节",
-    weakConcepts: "薄弱概念",
-    weakConcept: "薄弱概念",
-    weakConceptPlaceholder: "反复没掌握的概念或机制",
-    weakConceptNote: "薄弱原因",
-    weakConceptNotePlaceholder: "哪里还不清楚？",
-    addWeakConcept: "添加薄弱概念",
-    reviewReady: "可复习章节",
-    synthesisDue: "建议做三章综合",
-    noWeakChapters: "暂无薄弱章节",
-    noWeakConcepts: "暂无薄弱概念",
-    masteryScore: "掌握度",
-    export: "导出",
-    obsidianFolder: "Obsidian 文件夹",
-    selectObsidianFolder: "选择文件夹",
-    obsidianFolderPlaceholder: "/Users/me/ObsidianVault/Reading/book-name",
-    exportToObsidian: "导出到 Obsidian",
-    noWorkspaceLoaded: "尚未载入工作区",
-    continueReading: "继续阅读",
-    currentChapter: "上次位置",
-    reviewDue: "{count} 章已读完但未复习",
-    nextStep: "当前建议",
-    action_continue_current: "继续当前章节",
-    action_review_completed: "复习已读章节",
-    action_start_next: "开始下一章",
-    action_synthesize_book: "整理全书综合",
-    chapters: "章节",
-    chapter: "章节",
-    beforeReading: "读前问题",
-    coreQuestion: "本章要解决什么",
-    evidenceToSeek: "阅读时寻找什么证据",
-    afterReadingRecall: "读完后要回答什么",
-    noChapter: "未选择章节",
-    emptyReader: "载入一个工作区后开始阅读。",
-    capture: "记录",
-    buildUnderstanding: "构建理解",
-    captureType: "记录类型",
-    note: "笔记",
-    review: "复习卡",
-    evidence: "证据卡",
-    feynman: "费曼检查",
-    synthesis: "综合",
-    bookMap: "全书地图",
-    feynmanSummary: "3-5 句总结",
-    feynmanSummaryPlaceholder: "用自己的话解释本章...",
-    checkSummary: "检查总结",
-    saveFeynmanFeedback: "保存反馈",
-    accuratePoints: "准确之处",
-    vaguePoints: "过于模糊",
-    missingCausalLinks: "缺失的因果链",
-    unsupportedLeaps: "缺少证据的跳跃",
-    rewrittenVersion: "改写版本",
-    noFeedbackItems: "暂未发现问题",
-    synthesisStart: "起始章节",
-    synthesisCount: "章节数",
-    runSynthesis: "生成综合",
-    saveSynthesisFeedback: "保存综合",
-    commonQuestion: "共同问题",
-    recurringConcepts: "反复出现的概念",
-    argumentProgression: "论证推进",
-    openQuestions: "冲突或未解释处",
-    buildBookMap: "生成全书地图",
-    saveBookMap: "保存全书地图",
-    buildOnePageAccount: "生成一页书账",
-    saveOnePageAccount: "保存一页书账",
-    onePageAccount: "一页书账",
-    buildEvidenceTable: "生成证据表",
-    saveEvidenceTable: "保存证据表",
-    evidenceTableReady: "证据表已生成",
-    evidenceTableSaved: "证据表已保存",
-    evidenceTable: "证据表",
-    buildConceptMap: "生成概念图",
-    saveConceptMap: "保存概念图",
-    conceptMapReady: "概念图已生成",
-    conceptMapSaved: "概念图已保存",
-    conceptMap: "概念图",
-    nodes: "节点",
-    links: "关系",
-    sourceLocator: "来源位置",
-    notExplicitShort: "未明说",
-    inference: "推论",
-    strongestEvidence: "最强证据",
-    weakPoints: "薄弱点",
-    applicationPrompts: "应用提示",
-    coreProblem: "核心问题",
-    coreAnswer: "核心答案",
-    argumentChain: "论证链",
-    keyEvidence: "关键证据",
-    rebuttalsAndLimits: "反驳与限制",
-    selectedText: "已选文本",
-    saveQuote: "保存摘录",
-    makeEvidenceCard: "转为证据卡",
-    explainSelection: "解释这段",
-    makeReviewQuestion: "生成复习题",
-    noteType: "笔记类型",
-    section: "分类",
-    notePlaceholder: "写下问题、总结或可应用之处...",
-    saveNote: "保存笔记",
-    question: "问题",
-    reviewQuestionPlaceholder: "未来的我需要回忆什么？",
-    answer: "答案",
-    reviewAnswerPlaceholder: "用自己的话写下答案...",
-    saveReviewCard: "保存复习卡",
-    activeRecall: "主动回忆",
-    recallChapter: "回忆章节",
-    generateRecall: "生成回忆题",
-    saveAllRecallCards: "保存全部回忆卡",
-    recallNotCompleted: "该章节尚未标记为已完成/复习",
-    answerHint: "答案提示",
-    claim: "主张",
-    claimPlaceholder: "这段内容支持了什么主张？",
-    locator: "位置",
-    support: "证据",
-    supportPlaceholder: "写简短转述或短摘录...",
-    confidence: "可信度",
-    notExplicit: "未明说",
-    notExplicitPlaceholder: "原文没有证明什么？",
-    myInference: "我的推论",
-    inferencePlaceholder: "你从中推论出了什么？",
-    saveEvidenceCard: "保存证据卡",
-    working: "处理中...",
-    workspaceLoaded: "工作区已载入",
-    workspaceCreated: "工作区已创建",
-    noteSaved: "笔记已保存",
-    reviewCardSaved: "复习卡已保存",
-    evidenceCardSaved: "证据卡已保存",
-    feynmanFeedbackSaved: "费曼反馈已保存",
-    explanationDrafted: "解释草稿已生成",
-    reviewQuestionDrafted: "复习题草稿已生成",
-    synthesisReady: "跨章节综合已生成",
-    synthesisSaved: "跨章节综合已保存",
-    bookMapReady: "全书论证地图已生成",
-    bookMapSaved: "全书论证地图已保存",
-    onePageAccountReady: "一页书账已生成",
-    onePageAccountSaved: "一页书账已保存",
-    activeRecallReady: "主动回忆题已生成",
-    activeRecallSaved: "主动回忆卡已保存",
-    weakConceptSaved: "薄弱概念已保存",
-    quoteSaved: "摘录已保存",
-    obsidianExported: "已导出 {count} 个 Markdown 文件到 {folder}",
-    failedLoadWorkspace: "载入工作区失败",
-    failedCreateWorkspace: "创建工作区失败",
-    failedSelectSource: "选择源文件失败",
-    failedSelectWorkspaceTarget: "选择工作区文件夹失败",
-    failedLoadChapter: "载入章节失败",
-    failedSelectWorkspace: "选择工作区文件夹失败",
-    failedSelectObsidianFolder: "选择 Obsidian 文件夹失败",
-    failedUpdateState: "更新状态失败",
-    failedSaveNote: "保存笔记失败",
-    failedSaveReviewCard: "保存复习卡失败",
-    failedSaveEvidenceCard: "保存证据卡失败",
-    failedCheckSummary: "检查总结失败",
-    failedSaveFeynmanFeedback: "保存费曼反馈失败",
-    failedExplainSelection: "解释选中文本失败",
-    failedMakeReviewQuestion: "生成复习题失败",
-    failedRunSynthesis: "生成跨章节综合失败",
-    failedSaveSynthesis: "保存跨章节综合失败",
-    failedBuildBookMap: "生成全书论证地图失败",
-    failedSaveBookMap: "保存全书论证地图失败",
-    failedBuildOnePageAccount: "生成一页书账失败",
-    failedSaveOnePageAccount: "保存一页书账失败",
-    failedBuildEvidenceTable: "生成证据表失败",
-    failedSaveEvidenceTable: "保存证据表失败",
-    failedBuildConceptMap: "生成概念图失败",
-    failedSaveConceptMap: "保存概念图失败",
-    failedGenerateRecall: "生成主动回忆题失败",
-    failedSaveRecall: "保存主动回忆卡失败",
-    failedSaveQuote: "保存摘录失败",
-    failedObsidianExport: "导出到 Obsidian 失败",
-    failedAddWeakConcept: "添加薄弱概念失败",
-    requestFailed: "请求失败",
-    marked: "标记为",
-    stateLabels: {
-      reading: "阅读中",
-      done: "已完成",
-      review: "复习",
-      weak: "薄弱",
-    },
-    noteSectionLabels: {
-      Confusions: "困惑",
-      "Key Concepts": "关键概念",
-      "My 3-5 Sentence Summary": "我的 3-5 句总结",
-      Applications: "可应用之处",
-    },
-    noteTypeLabels: {
-      Quote: "原文摘录",
-      "My Thought": "我的想法",
-      "AI Explanation": "AI 解释",
-      Question: "问题",
-    },
-    confidenceLabels: {
-      High: "高",
-      Medium: "中",
-      Low: "低",
-    },
-  },
-} satisfies Record<Language, Record<string, unknown>>;
-
-function getInitialLanguage(): Language {
-  const storedLanguage = window.localStorage.getItem("deep-reading-language");
-  return storedLanguage === "zh" ? "zh" : "en";
+function containsCjk(text: string): boolean {
+  return /[\u4e00-\u9fff]/.test(text);
 }
 
-function getInitialObsidianFolder(): string {
-  return window.localStorage.getItem("deep-reading-obsidian-folder") ?? "";
-}
-
-function getInitialRecentWorkspaces(): string[] {
-  try {
-    const stored = window.localStorage.getItem("deep-reading-recent-workspaces");
-    const parsed = stored ? JSON.parse(stored) : [];
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === "string").slice(0, 5)
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const apiBaseUrl = window.deepReadingDesktop?.apiBaseUrl ?? "/api";
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
-    ...init,
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || `Request failed: ${response.status}`);
-  }
-  return data as T;
-}
-
-function formatFeynmanFeedback(result: FeynmanCheckResult): string {
-  const list = (items: string[]) =>
-    items.length > 0 ? items.map((item) => `- ${item}`).join("\n") : "- None";
-  return [
-    "## Feynman Check",
-    "",
-    "### Accurate",
-    list(result.accurate_points),
-    "",
-    "### Too Vague",
-    list(result.vague_points),
-    "",
-    "### Missing Causal Links",
-    list(result.missing_causal_links),
-    "",
-    "### Unsupported Leaps",
-    list(result.unsupported_leaps),
-    "",
-    "### Rewrite",
-    result.rewritten_version,
-  ].join("\n");
-}
-
-function formatChapterSynthesis(result: ChapterSynthesisResult): string {
-  const list = (items: string[]) => items.map((item) => `- ${item}`).join("\n");
-  return [
-    "## Cross-Chapter Synthesis",
-    "",
-    "### Chapters",
-    list(result.chapters.map((chapter) => `${chapter.id}: ${chapter.title} (${chapter.state})`)),
-    "",
-    "### Common Question",
-    result.common_question,
-    "",
-    "### Recurring Concepts",
-    list(result.recurring_concepts),
-    "",
-    "### Argument Progression",
-    result.argument_progression,
-    "",
-    "### Open Questions",
-    list(result.open_questions),
-  ].join("\n");
+function resolveSelectionOutputLanguage(
+  selected: SelectionOutputLanguage,
+  uiLanguage: Language,
+  selectedText: string,
+): "zh" | "en" {
+  if (selected === "zh" || selected === "en") return selected;
+  return containsCjk(selectedText) || uiLanguage === "zh" ? "zh" : "en";
 }
 
 function formatActionLabel(t: (typeof translations)[Language], action: NextAction): string {
@@ -834,7 +83,14 @@ function App() {
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [activeChapter, setActiveChapter] = useState<ChapterText | null>(null);
   const [activeCapture, setActiveCapture] = useState<
-    "note" | "review" | "evidence" | "feynman" | "synthesis" | "bookMap"
+    | "note"
+    | "review"
+    | "evidence"
+    | "feynman"
+    | "synthesis"
+    | "bookMap"
+    | "learning"
+    | "context"
   >("note");
   const [noteSection, setNoteSection] = useState("Confusions");
   const [noteType, setNoteType] = useState("My Thought");
@@ -860,10 +116,16 @@ function App() {
   const [evidenceNotExplicit, setEvidenceNotExplicit] = useState("");
   const [evidenceInference, setEvidenceInference] = useState("");
   const [selectedText, setSelectedText] = useState("");
+  const [selectionOutputLanguage, setSelectionOutputLanguage] =
+    useState<SelectionOutputLanguage>(getInitialSelectionOutputLanguage);
   const [selectionToolbarPosition, setSelectionToolbarPosition] =
     useState<SelectionToolbarPosition | null>(null);
   const [obsidianFolder, setObsidianFolder] = useState(getInitialObsidianFolder);
-  const [recentWorkspaces, setRecentWorkspaces] = useState<string[]>(getInitialRecentWorkspaces);
+  const [workspaceLibrary, setWorkspaceLibrary] =
+    useState<WorkspaceLibraryItem[]>(getInitialWorkspaceLibrary);
+  const [evidenceContextQuery, setEvidenceContextQuery] = useState("");
+  const [evidenceContextResult, setEvidenceContextResult] =
+    useState<EvidenceContextResult | null>(null);
   const [llmProviders, setLlmProviders] = useState<LLMProviderList | null>(null);
   const [providerDraft, setProviderDraft] = useState("");
   const [providerModelDraft, setProviderModelDraft] = useState("");
@@ -893,11 +155,19 @@ function App() {
   }, [obsidianFolder]);
 
   useEffect(() => {
+    window.localStorage.setItem("deep-reading-selection-output-language", selectionOutputLanguage);
+  }, [selectionOutputLanguage]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      "deep-reading-workspace-library",
+      JSON.stringify(workspaceLibrary),
+    );
     window.localStorage.setItem(
       "deep-reading-recent-workspaces",
-      JSON.stringify(recentWorkspaces),
+      JSON.stringify(workspaceLibrary.map((item) => item.path).slice(0, 5)),
     );
-  }, [recentWorkspaces]);
+  }, [workspaceLibrary]);
 
   useEffect(() => {
     void loadLLMProviders();
@@ -918,6 +188,32 @@ function App() {
   }, [llmProviders]);
 
   const providerModelCatalog = providerDraft ? providerModelCatalogs[providerDraft] : null;
+
+  function workspaceTitle(path: string): string {
+    return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
+  }
+
+  function rememberWorkspace(nextWorkspace: string, nextStatus: Status) {
+    const item: WorkspaceLibraryItem = {
+      path: nextWorkspace,
+      title: workspaceTitle(nextWorkspace),
+      last_opened_at: new Date().toISOString(),
+      current: nextStatus.current,
+      progress: nextStatus.progress,
+      next_action: nextStatus.continue_reading.next_action,
+    };
+    setWorkspaceLibrary((current) => [
+      item,
+      ...current.filter((candidate) => candidate.path !== nextWorkspace),
+    ].slice(0, 12));
+  }
+
+  function progressSummary(progress?: Record<string, number>): string {
+    if (!progress) return t.noWorkspaceSummary;
+    return Object.entries(progress)
+      .map(([key, value]) => `${key}: ${value}`)
+      .join(" · ");
+  }
 
   useEffect(() => {
     if (settingsOpen && providerDraft && !providerModelCatalogs[providerDraft]) {
@@ -948,10 +244,7 @@ function App() {
         setWeakConceptChapterId((current) => current || chapterResult.chapters[0].id);
         await loadChapter(chapterResult.chapters[0].id, nextWorkspace);
       }
-      setRecentWorkspaces((current) => [
-        nextWorkspace,
-        ...current.filter((item) => item !== nextWorkspace),
-      ].slice(0, 5));
+      rememberWorkspace(nextWorkspace, nextStatus);
       setMessage(t.workspaceLoaded);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedLoadWorkspace);
@@ -1227,6 +520,7 @@ function App() {
   async function explainSelectedText() {
     if (!activeChapter || !selectedText.trim()) return;
     const text = selectedText.trim();
+    const outputLanguage = resolveSelectionOutputLanguage(selectionOutputLanguage, language, text);
     setBusy(true);
     setError("");
     try {
@@ -1236,6 +530,7 @@ function App() {
           workspace,
           chapter_id: activeChapter.id,
           selected_text: text,
+          language: outputLanguage,
         }),
       });
       setActiveCapture("note");
@@ -1256,6 +551,7 @@ function App() {
   async function makeReviewQuestionFromSelection() {
     if (!activeChapter || !selectedText.trim()) return;
     const text = selectedText.trim();
+    const outputLanguage = resolveSelectionOutputLanguage(selectionOutputLanguage, language, text);
     setBusy(true);
     setError("");
     try {
@@ -1267,6 +563,7 @@ function App() {
             workspace,
             chapter_id: activeChapter.id,
             selected_text: text,
+            language: outputLanguage,
           }),
         },
       );
@@ -1282,6 +579,78 @@ function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function sendSelectionToFeynmanCheck() {
+    if (!activeChapter || !selectedText.trim()) return;
+    const text = selectedText.trim();
+    setActiveCapture("feynman");
+    setFeynmanSummary(`${t.selectedPassagePrompt}\n\n${text}\n\n${t.myExplanationPrompt}\n`);
+    setSelectedText("");
+    setSelectionToolbarPosition(null);
+    window.getSelection()?.removeAllRanges();
+  }
+
+  function sendSelectionToConfusionNote() {
+    if (!activeChapter || !selectedText.trim()) return;
+    const text = selectedText.trim();
+    setActiveCapture("note");
+    setNoteType("Question");
+    setNoteSection("Confusions");
+    setNoteText(`${t.confusionDraftPrefix}\n\n> ${text.replace(/\n/g, "\n> ")}\n\n`);
+    setSelectedText("");
+    setSelectionToolbarPosition(null);
+    window.getSelection()?.removeAllRanges();
+  }
+
+  async function runEvidenceContext(nextQuery = evidenceContextQuery) {
+    if (!nextQuery.trim()) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await apiRequest<EvidenceContextResult>("/evidence-context", {
+        method: "POST",
+        body: JSON.stringify({
+          workspace,
+          chapter_id: activeChapter?.id ?? null,
+          query: nextQuery.trim(),
+          limit: 6,
+        }),
+      });
+      setEvidenceContextResult(result);
+      setEvidenceContextQuery(result.query);
+      setActiveCapture("context");
+      setMessage(t.evidenceContextReady);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedBuildEvidenceContext);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendSelectionToEvidenceContext() {
+    if (!selectedText.trim()) return;
+    const text = selectedText.trim();
+    setEvidenceContextQuery(text);
+    setSelectedText("");
+    setSelectionToolbarPosition(null);
+    window.getSelection()?.removeAllRanges();
+    await runEvidenceContext(text);
+  }
+
+  function draftEvidenceFromContext(match: EvidenceContextMatch) {
+    setActiveCapture("evidence");
+    setEvidenceClaim(evidenceContextResult?.query ?? "");
+    setEvidenceLocator(match.locator);
+    setEvidenceSupport(match.snippet);
+  }
+
+  function draftNoteFromContext(match: EvidenceContextMatch) {
+    setActiveCapture("note");
+    setNoteType("AI Explanation");
+    setNoteSection("Key Concepts");
+    setNoteText(`${match.locator}\n\n${match.snippet}`);
   }
 
   async function updateState(nextState: string) {
@@ -1810,23 +1179,27 @@ function App() {
         </form>
 
         <div className="recent-workspaces">
-          <span className="eyebrow">{t.recentWorkspaces}</span>
-          {recentWorkspaces.length === 0 ? (
+          <span className="eyebrow">{t.workspaceLibrary}</span>
+          {workspaceLibrary.length === 0 ? (
             <p className="muted">{t.noRecentWorkspaces}</p>
           ) : (
             <div className="recent-workspace-list">
-              {recentWorkspaces.map((recentWorkspace) => (
+              {workspaceLibrary.map((item) => (
                 <button
-                  key={recentWorkspace}
+                  key={item.path}
                   onClick={() => {
-                    setWorkspace(recentWorkspace);
-                    void loadWorkspace(recentWorkspace);
+                    setWorkspace(item.path);
+                    void loadWorkspace(item.path);
                   }}
                   type="button"
                   disabled={busy}
-                  title={recentWorkspace}
+                  title={item.path}
                 >
-                  {recentWorkspace}
+                  <strong>{item.title ?? workspaceTitle(item.path)}</strong>
+                  <span>{progressSummary(item.progress)}</span>
+                  {item.next_action && (
+                    <em>{formatActionLabel(t, item.next_action)}</em>
+                  )}
                 </button>
               ))}
             </div>
@@ -1837,103 +1210,6 @@ function App() {
           <span>{t.status}</span>
           <strong>{progressText}</strong>
         </div>
-
-        {status && (
-          <section className="learning-loop">
-            <span className="eyebrow">{t.learningLoop}</span>
-            <div className="learning-loop-metrics">
-              <p>
-                <strong>{status.learning_loop.average_mastery}%</strong>
-                <span>{t.averageMastery}</span>
-              </p>
-              <p>
-                <strong>{status.learning_loop.review_ready.length}</strong>
-                <span>{t.reviewReady}</span>
-              </p>
-            </div>
-            {status.learning_loop.synthesis_due && (
-              <p className="success">{t.synthesisDue}</p>
-            )}
-            <div className="weak-chapter-list">
-              <strong>{t.weakChapters}</strong>
-              {status.learning_loop.weak_chapters.length === 0 ? (
-                <span className="muted">{t.noWeakChapters}</span>
-              ) : (
-                status.learning_loop.weak_chapters.slice(0, 3).map((chapter) => (
-                  <button
-                    key={chapter.id}
-                    type="button"
-                    onClick={() => void loadChapter(chapter.id)}
-                    disabled={busy}
-                    title={chapter.weak_reasons.join(" · ")}
-                  >
-                    <span>
-                      {chapter.id}: {chapter.title}
-                    </span>
-                    <em>
-                      {t.masteryScore} {chapter.mastery_score}%
-                    </em>
-                  </button>
-                ))
-              )}
-            </div>
-
-            <div className="weak-concept-list">
-              <strong>{t.weakConcepts}</strong>
-              {status.learning_loop.weak_concepts.length === 0 ? (
-                <span className="muted">{t.noWeakConcepts}</span>
-              ) : (
-                status.learning_loop.weak_concepts.slice(0, 3).map((item) => (
-                  <button
-                    key={`${item.chapter_id}-${item.concept}`}
-                    type="button"
-                    onClick={() => void loadChapter(item.chapter_id)}
-                    disabled={busy}
-                    title={item.note}
-                  >
-                    <span>{item.concept}</span>
-                    <em>
-                      {item.chapter_id}: {item.title}
-                    </em>
-                  </button>
-                ))
-              )}
-            </div>
-
-            <form className="weak-concept-form" onSubmit={addWeakConcept}>
-              <label htmlFor="weak-concept">{t.weakConcept}</label>
-              <input
-                id="weak-concept"
-                value={weakConcept}
-                onChange={(event) => setWeakConcept(event.target.value)}
-                placeholder={t.weakConceptPlaceholder}
-              />
-              <label htmlFor="weak-concept-chapter">{t.chapter}</label>
-              <select
-                id="weak-concept-chapter"
-                value={weakConceptChapterId}
-                onChange={(event) => setWeakConceptChapterId(event.target.value)}
-              >
-                {chapters.map((chapter) => (
-                  <option key={chapter.id} value={chapter.id}>
-                    {chapter.id}: {chapter.title}
-                  </option>
-                ))}
-              </select>
-              <label htmlFor="weak-concept-note">{t.weakConceptNote}</label>
-              <textarea
-                id="weak-concept-note"
-                className="mini"
-                value={weakConceptNote}
-                onChange={(event) => setWeakConceptNote(event.target.value)}
-                placeholder={t.weakConceptNotePlaceholder}
-              />
-              <button type="submit" disabled={busy || !weakConcept.trim() || !weakConceptChapterId}>
-                {t.addWeakConcept}
-              </button>
-            </form>
-          </section>
-        )}
 
         {status && (
           <section className="continue-reading">
@@ -2032,6 +1308,19 @@ function App() {
             >
               {t.makeReviewQuestion}
             </button>
+            <button type="button" onClick={sendSelectionToFeynmanCheck} disabled={busy}>
+              {t.feynman}
+            </button>
+            <button type="button" onClick={sendSelectionToConfusionNote} disabled={busy}>
+              {t.confusion}
+            </button>
+            <button
+              type="button"
+              onClick={() => void sendSelectionToEvidenceContext()}
+              disabled={busy}
+            >
+              {t.evidenceContext}
+            </button>
           </div>
         )}
 
@@ -2095,8 +1384,10 @@ function App() {
             ["review", t.review],
             ["evidence", t.evidence],
             ["feynman", t.feynman],
+            ["context", t.evidenceContext],
             ["synthesis", t.synthesis],
             ["bookMap", t.bookMap],
+            ["learning", t.learning],
           ].map(([id, label]) => (
             <button
               key={id}
@@ -2109,7 +1400,9 @@ function App() {
                     | "evidence"
                     | "feynman"
                     | "synthesis"
-                    | "bookMap",
+                    | "bookMap"
+                    | "learning"
+                    | "context",
                 )
               }
               type="button"
@@ -2117,6 +1410,26 @@ function App() {
               {label}
             </button>
           ))}
+        </div>
+
+        <div className="selection-output-control">
+          <label htmlFor="selection-output-language">{t.selectionOutputLanguage}</label>
+          <select
+            id="selection-output-language"
+            value={selectionOutputLanguage}
+            onChange={(event) =>
+              setSelectionOutputLanguage(event.target.value as SelectionOutputLanguage)
+            }
+          >
+            {selectionOutputLanguages.map((option) => {
+              const label = t[option.labelKey as keyof typeof t];
+              return (
+                <option key={option.code} value={option.code}>
+                  {typeof label === "string" ? label : option.code}
+                </option>
+              );
+            })}
+          </select>
         </div>
 
         {activeCapture === "note" && (
@@ -2363,6 +1676,68 @@ function App() {
           </form>
         )}
 
+        {activeCapture === "context" && (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void runEvidenceContext();
+            }}
+            className="capture-form"
+          >
+            <label htmlFor="evidence-context-query">{t.evidenceContextQuery}</label>
+            <textarea
+              id="evidence-context-query"
+              className="compact"
+              value={evidenceContextQuery}
+              onChange={(event) => setEvidenceContextQuery(event.target.value)}
+              placeholder={t.evidenceContextPlaceholder}
+            />
+
+            <button type="submit" disabled={busy || !evidenceContextQuery.trim()}>
+              {t.findEvidenceContext}
+            </button>
+
+            {evidenceContextResult && (
+              <section className="feynman-result evidence-context-results">
+                <h3>{t.evidenceContextResults}</h3>
+                {evidenceContextResult.matches.length === 0 ? (
+                  <p className="muted">{t.noEvidenceContextMatches}</p>
+                ) : (
+                  evidenceContextResult.matches.map((match) => (
+                    <article
+                      key={`${match.source_type}-${match.locator}-${match.snippet}`}
+                      className="context-match"
+                    >
+                      <h3>{match.locator}</h3>
+                      <p>
+                        <strong>{t.sourceType}</strong> {match.source_type} ·{" "}
+                        <strong>{t.score}</strong> {match.score}
+                      </p>
+                      <p>{match.snippet}</p>
+                      <div className="context-match-actions">
+                        <button
+                          type="button"
+                          onClick={() => draftEvidenceFromContext(match)}
+                          disabled={busy}
+                        >
+                          {t.draftEvidenceCard}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => draftNoteFromContext(match)}
+                          disabled={busy}
+                        >
+                          {t.copyToNoteDraft}
+                        </button>
+                      </div>
+                    </article>
+                  ))
+                )}
+              </section>
+            )}
+          </form>
+        )}
+
         {activeCapture === "bookMap" && (
           <div className="capture-form">
             <button type="button" onClick={() => void buildBookMap()} disabled={busy}>
@@ -2529,6 +1904,112 @@ function App() {
                   {t.saveOnePageAccount}
                 </button>
               </section>
+            )}
+          </div>
+        )}
+
+        {activeCapture === "learning" && (
+          <div className="capture-form">
+            {status ? (
+              <section className="learning-loop learning-panel">
+                <span className="eyebrow">{t.learningLoop}</span>
+                <div className="learning-loop-metrics">
+                  <p>
+                    <strong>{status.learning_loop.average_mastery}%</strong>
+                    <span>{t.averageMastery}</span>
+                  </p>
+                  <p>
+                    <strong>{status.learning_loop.review_ready.length}</strong>
+                    <span>{t.reviewReady}</span>
+                  </p>
+                </div>
+                {status.learning_loop.synthesis_due && (
+                  <p className="success">{t.synthesisDue}</p>
+                )}
+                <div className="weak-chapter-list">
+                  <strong>{t.weakChapters}</strong>
+                  {status.learning_loop.weak_chapters.length === 0 ? (
+                    <span className="muted">{t.noWeakChapters}</span>
+                  ) : (
+                    status.learning_loop.weak_chapters.slice(0, 4).map((chapter) => (
+                      <button
+                        key={chapter.id}
+                        type="button"
+                        onClick={() => void loadChapter(chapter.id)}
+                        disabled={busy}
+                        title={chapter.weak_reasons.join(" · ")}
+                      >
+                        <span>
+                          {chapter.id}: {chapter.title}
+                        </span>
+                        <em>
+                          {t.masteryScore} {chapter.mastery_score}%
+                        </em>
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                <div className="weak-concept-list">
+                  <strong>{t.weakConcepts}</strong>
+                  {status.learning_loop.weak_concepts.length === 0 ? (
+                    <span className="muted">{t.noWeakConcepts}</span>
+                  ) : (
+                    status.learning_loop.weak_concepts.slice(0, 4).map((item) => (
+                      <button
+                        key={`${item.chapter_id}-${item.concept}`}
+                        type="button"
+                        onClick={() => void loadChapter(item.chapter_id)}
+                        disabled={busy}
+                        title={item.note}
+                      >
+                        <span>{item.concept}</span>
+                        <em>
+                          {item.chapter_id}: {item.title}
+                        </em>
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                <form className="weak-concept-form" onSubmit={addWeakConcept}>
+                  <label htmlFor="weak-concept">{t.weakConcept}</label>
+                  <input
+                    id="weak-concept"
+                    value={weakConcept}
+                    onChange={(event) => setWeakConcept(event.target.value)}
+                    placeholder={t.weakConceptPlaceholder}
+                  />
+                  <label htmlFor="weak-concept-chapter">{t.chapter}</label>
+                  <select
+                    id="weak-concept-chapter"
+                    value={weakConceptChapterId}
+                    onChange={(event) => setWeakConceptChapterId(event.target.value)}
+                  >
+                    {chapters.map((chapter) => (
+                      <option key={chapter.id} value={chapter.id}>
+                        {chapter.id}: {chapter.title}
+                      </option>
+                    ))}
+                  </select>
+                  <label htmlFor="weak-concept-note">{t.weakConceptNote}</label>
+                  <textarea
+                    id="weak-concept-note"
+                    className="mini"
+                    value={weakConceptNote}
+                    onChange={(event) => setWeakConceptNote(event.target.value)}
+                    placeholder={t.weakConceptNotePlaceholder}
+                  />
+                  <button
+                    type="submit"
+                    disabled={busy || !weakConcept.trim() || !weakConceptChapterId}
+                  >
+                    {t.addWeakConcept}
+                  </button>
+                </form>
+              </section>
+            ) : (
+              <p className="muted">{t.noWorkspaceLoaded}</p>
             )}
           </div>
         )}

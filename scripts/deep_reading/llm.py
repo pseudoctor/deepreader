@@ -37,6 +37,39 @@ class LLMProviderSpec:
         return f"DEEP_READING_{self.name.upper()}_BASE_URL"
 
 
+RECOMMENDED_MODEL_CATALOG_PATH = Path(__file__).with_name("model_catalog.json")
+
+
+def load_recommended_model_catalog() -> dict[str, object]:
+    try:
+        data = json.loads(RECOMMENDED_MODEL_CATALOG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def recommended_model_entry(provider: str) -> dict[str, object]:
+    catalog = load_recommended_model_catalog()
+    providers = catalog.get("providers", {})
+    if not isinstance(providers, dict):
+        return {}
+    entry = providers.get(provider, {})
+    return entry if isinstance(entry, dict) else {}
+
+
+def recommended_default_model(provider: str, fallback: str) -> str:
+    value = recommended_model_entry(provider).get("default_model")
+    return value.strip() if isinstance(value, str) and value.strip() else fallback
+
+
+def recommended_fallback_models(provider: str, fallback: tuple[str, ...]) -> tuple[str, ...]:
+    values = recommended_model_entry(provider).get("recommended_models")
+    if not isinstance(values, list):
+        return fallback
+    models = tuple(value.strip() for value in values if isinstance(value, str) and value.strip())
+    return models or fallback
+
+
 PROVIDER_SPECS: tuple[LLMProviderSpec, ...] = (
     LLMProviderSpec(
         name="mock",
@@ -44,8 +77,8 @@ PROVIDER_SPECS: tuple[LLMProviderSpec, ...] = (
         api_key_env=None,
         default_base_url=None,
         model_env="DEEP_READING_MOCK_MODEL",
-        default_model="mock-local",
-        fallback_models=("mock-local",),
+        default_model=recommended_default_model("mock", "mock-local"),
+        fallback_models=recommended_fallback_models("mock", ("mock-local",)),
         catalog_type="recommended",
     ),
     LLMProviderSpec(
@@ -54,9 +87,9 @@ PROVIDER_SPECS: tuple[LLMProviderSpec, ...] = (
         api_key_env="OPENAI_API_KEY",
         default_base_url="https://api.openai.com/v1",
         model_env="OPENAI_MODEL",
-        default_model="gpt-5.4-mini",
-        fallback_models=("gpt-5.4-mini", "gpt-5.2", "gpt-5-mini"),
-        preferred_patterns=("gpt-5", "gpt-4.1", "gpt-4o", "o3", "o4"),
+        default_model=recommended_default_model("openai", "gpt-5.4-mini"),
+        fallback_models=recommended_fallback_models("openai", ("gpt-5.4-mini", "gpt-4.1")),
+        preferred_patterns=("gpt-5.5", "gpt-5.4", "gpt-5", "gpt-4.1", "gpt-4o", "o3", "o4"),
     ),
     LLMProviderSpec(
         name="claude",
@@ -64,8 +97,8 @@ PROVIDER_SPECS: tuple[LLMProviderSpec, ...] = (
         api_key_env="ANTHROPIC_API_KEY",
         default_base_url="https://api.anthropic.com/v1",
         model_env="ANTHROPIC_MODEL",
-        default_model="claude-sonnet-4.6",
-        fallback_models=("claude-sonnet-4.6", "claude-opus-4.1"),
+        default_model=recommended_default_model("claude", "claude-sonnet-4-6"),
+        fallback_models=recommended_fallback_models("claude", ("claude-sonnet-4-6",)),
         catalog_type="recommended",
     ),
     LLMProviderSpec(
@@ -74,10 +107,16 @@ PROVIDER_SPECS: tuple[LLMProviderSpec, ...] = (
         api_key_env="GEMINI_API_KEY",
         default_base_url="https://generativelanguage.googleapis.com/v1beta",
         model_env="GEMINI_MODEL",
-        default_model="gemini-2.5-flash",
-        fallback_models=("gemini-2.5-flash", "gemini-2.5-pro", "gemini-3-flash-preview"),
+        default_model=recommended_default_model("gemini", "gemini-2.5-flash"),
+        fallback_models=recommended_fallback_models("gemini", ("gemini-2.5-flash",)),
         catalog_type="gemini",
-        preferred_patterns=("gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-flash"),
+        preferred_patterns=(
+            "gemini-3.5",
+            "gemini-3.1",
+            "gemini-3",
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
+        ),
         exclude_patterns=("tts", "audio", "banana", "imagen", "veo", "lyria", "embed"),
         preferred_only=True,
         max_model_options=10,
@@ -88,15 +127,13 @@ PROVIDER_SPECS: tuple[LLMProviderSpec, ...] = (
         api_key_env="DEEPSEEK_API_KEY",
         default_base_url="https://api.deepseek.com",
         model_env="DEEPSEEK_MODEL",
-        default_model="deepseek-v4-flash",
-        fallback_models=(
-            "deepseek-v4-flash",
-            "deepseek-v4-pro",
-            "deepseek-chat",
-            "deepseek-reasoner",
+        default_model=recommended_default_model("deepseek", "deepseek-chat"),
+        fallback_models=recommended_fallback_models(
+            "deepseek",
+            ("deepseek-chat", "deepseek-reasoner"),
         ),
         include_patterns=("deepseek",),
-        preferred_patterns=("deepseek-v4", "deepseek-chat", "deepseek-reasoner"),
+        preferred_patterns=("deepseek-chat", "deepseek-reasoner", "deepseek-v4", "deepseek-v3"),
         preferred_only=True,
         max_model_options=8,
     ),
@@ -106,10 +143,10 @@ PROVIDER_SPECS: tuple[LLMProviderSpec, ...] = (
         api_key_env="QWEN_API_KEY",
         default_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
         model_env="QWEN_MODEL",
-        default_model="qwen-plus",
-        fallback_models=("qwen-plus", "qwen-turbo", "qwen-max"),
+        default_model=recommended_default_model("qwen", "qwen-plus"),
+        fallback_models=recommended_fallback_models("qwen", ("qwen-plus", "qwen-max")),
         include_patterns=("qwen",),
-        preferred_patterns=("qwen-plus", "qwen-turbo", "qwen-max"),
+        preferred_patterns=("qwen-plus", "qwen-max", "qwen-turbo", "qwen3"),
         preferred_only=True,
         max_model_options=8,
     ),
@@ -327,6 +364,22 @@ def contains_marker(text: str, marker: str) -> bool:
 
 def contains_cjk(text: str) -> bool:
     return any("\u4e00" <= char <= "\u9fff" for char in text)
+
+
+def resolve_selection_language(language: str | None, selected_text: str) -> Literal["zh", "en"]:
+    normalized = (language or "auto").strip().lower()
+    if normalized in {"zh", "chinese", "中文"}:
+        return "zh"
+    if normalized in {"en", "english"}:
+        return "en"
+    return "zh" if contains_cjk(selected_text) else "en"
+
+
+def selection_language_instruction(language: str | None, selected_text: str) -> str:
+    resolved = resolve_selection_language(language, selected_text)
+    if resolved == "zh":
+        return "Output language: Chinese. Write the explanation naturally in Chinese."
+    return "Output language: English. Write the explanation naturally in English."
 
 
 def env_value(name: str) -> str | None:
@@ -689,13 +742,24 @@ class LLMProvider:
     def complete_json(self, _prompt: str, _schema_name: str) -> dict[str, object]:
         raise NotImplementedError
 
+    def grounded_context_prompt(self, chapter: dict[str, object]) -> str:
+        context = str(chapter.get("evidence_context", "")).strip()
+        if not context:
+            return ""
+        return (
+            "\n\nGrounded context from the local reading workspace. Prefer these "
+            "locators when checking claims, and distinguish source evidence from inference:\n"
+            f"{context}"
+        )
+
     def check_feynman_summary(
         self,
         chapter: dict[str, object],
         summary: str,
     ) -> dict[str, object]:
         return self.complete_json(
-            f"Check this chapter summary for {chapter['id']}: {chapter['title']}\n\n{summary}",
+            f"Check this chapter summary for {chapter['id']}: {chapter['title']}"
+            f"{self.grounded_context_prompt(chapter)}\n\n{summary}",
             "feynman_check",
         )
 
@@ -703,9 +767,13 @@ class LLMProvider:
         self,
         chapter: dict[str, object],
         selected_text: str,
+        language: str | None = None,
     ) -> dict[str, str]:
+        language_instruction = selection_language_instruction(language, selected_text)
         result = self.complete_json(
             f"Explain this selected passage from {chapter['id']}: {chapter['title']}\n\n"
+            f"{language_instruction}\n\n"
+            f"{self.grounded_context_prompt(chapter)}\n\n"
             f"{selected_text}",
             "selection_explanation",
         )
@@ -715,9 +783,13 @@ class LLMProvider:
         self,
         chapter: dict[str, object],
         selected_text: str,
+        language: str | None = None,
     ) -> dict[str, str]:
+        language_instruction = selection_language_instruction(language, selected_text)
         result = self.complete_json(
-            f"Generate a review card for {chapter['id']}: {chapter['title']}\n\n{selected_text}",
+            f"Generate a review card for {chapter['id']}: {chapter['title']}\n\n"
+            f"{language_instruction}\n\n"
+            f"{selected_text}",
             "selection_review_question",
         )
         return {key: str(value) for key, value in result.items()}
@@ -783,12 +855,13 @@ class MockLLMProvider(LLMProvider):
         self,
         chapter: dict[str, object],
         selected_text: str,
+        language: str | None = None,
     ) -> dict[str, str]:
         text = selected_text.strip()
         if not text:
             raise ValueError("Selected text cannot be empty")
 
-        if contains_cjk(text):
+        if resolve_selection_language(language, text) == "zh":
             explanation = "\n".join(
                 [
                     f"选中文段来自 {chapter['id']}: {chapter['title']}",
@@ -830,13 +903,14 @@ class MockLLMProvider(LLMProvider):
         self,
         chapter: dict[str, object],
         selected_text: str,
+        language: str | None = None,
     ) -> dict[str, str]:
         text = selected_text.strip()
         if not text:
             raise ValueError("Selected text cannot be empty")
 
         preview = text if len(text) <= 180 else text[:177].rstrip() + "..."
-        if contains_cjk(text):
+        if resolve_selection_language(language, text) == "zh":
             return {
                 "chapter_id": str(chapter["id"]),
                 "title": str(chapter["title"]),
@@ -921,15 +995,18 @@ class OpenAIProvider(LLMProvider):
         self,
         chapter: dict[str, object],
         selected_text: str,
+        language: str | None = None,
     ) -> dict[str, str]:
         text = selected_text.strip()
         if not text:
             raise ValueError("Selected text cannot be empty")
+        language_instruction = selection_language_instruction(language, text)
 
         result = self.complete_json(
             (
                 f"Chapter id: {chapter['id']}\n"
                 f"Chapter title: {chapter['title']}\n\n"
+                f"{language_instruction}\n\n"
                 "Explain the selected passage for a deep-reading learner. Focus on claim, "
                 "evidence, causal link, and how to read it.\n\n"
                 f"Selected passage:\n{text}"
@@ -946,15 +1023,18 @@ class OpenAIProvider(LLMProvider):
         self,
         chapter: dict[str, object],
         selected_text: str,
+        language: str | None = None,
     ) -> dict[str, str]:
         text = selected_text.strip()
         if not text:
             raise ValueError("Selected text cannot be empty")
+        language_instruction = selection_language_instruction(language, text)
 
         result = self.complete_json(
             (
                 f"Chapter id: {chapter['id']}\n"
                 f"Chapter title: {chapter['title']}\n\n"
+                f"{language_instruction}\n\n"
                 "Generate one review question and one concise answer for this selected passage. "
                 "The question should test the passage's claim, evidence, or causal link.\n\n"
                 f"Selected passage:\n{text}"

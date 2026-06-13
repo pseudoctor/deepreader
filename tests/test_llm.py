@@ -44,10 +44,11 @@ def test_list_provider_status_includes_reserved_providers(monkeypatch: pytest.Mo
     assert providers["deepseek"]["api_key_env"] == "DEEPSEEK_API_KEY"
     assert providers["qwen"]["api_key_env"] == "QWEN_API_KEY"
     assert providers["openai"]["model"] == "gpt-5.4-mini"
-    assert providers["claude"]["model"] == "claude-sonnet-4.6"
-    assert providers["gemini"]["model"] == "gemini-2.5-flash"
-    assert providers["deepseek"]["model"] == "deepseek-v4-flash"
-    assert providers["openai"]["fallback_models"][0]["value"] == "gpt-5.4-mini"
+    assert providers["claude"]["model"] == "claude-sonnet-4-6"
+    assert providers["gemini"]["model"] == "gemini-3.5-flash"
+    assert providers["deepseek"]["model"] == "deepseek-chat"
+    assert providers["openai"]["fallback_models"][0]["value"] == "gpt-5.5"
+    assert providers["openai"]["fallback_models"][1]["value"] == "gpt-5.4"
 
 
 def test_provider_status_detects_api_key_without_exposing_value(
@@ -120,7 +121,8 @@ def test_list_provider_models_returns_recommended_for_claude() -> None:
 
     assert result["source"] == "fallback"
     assert result["reason"] == "recommended_only"
-    assert result["models"][0]["value"] == "claude-sonnet-4.6"  # type: ignore[index]
+    assert result["models"][0]["value"] == "claude-opus-4-8"  # type: ignore[index]
+    assert result["models"][1]["value"] == "claude-sonnet-4-6"  # type: ignore[index]
 
 
 def test_list_provider_models_falls_back_without_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -130,7 +132,8 @@ def test_list_provider_models_falls_back_without_key(monkeypatch: pytest.MonkeyP
 
     assert result["source"] == "fallback"
     assert result["reason"] == "auth"
-    assert result["models"][0]["value"] == "gpt-5.4-mini"  # type: ignore[index]
+    assert result["models"][0]["value"] == "gpt-5.5"  # type: ignore[index]
+    assert result["models"][1]["value"] == "gpt-5.4"  # type: ignore[index]
 
 
 def test_list_provider_models_fetches_openai_compatible_models(
@@ -239,6 +242,18 @@ def test_mock_provider_explains_selection() -> None:
 
     assert result["chapter_id"] == "ch01"
     assert "How to read it:" in result["explanation"]
+
+
+def test_mock_provider_explains_selection_in_requested_language() -> None:
+    provider = build_provider("mock")
+
+    result = provider.explain_selection(
+        {"id": "ch01", "title": "Intro"},
+        "This is a short sample.",
+        language="zh",
+    )
+
+    assert "怎么读这段" in result["explanation"]
 
 
 def test_mock_provider_generates_selection_review_question() -> None:
@@ -403,7 +418,11 @@ def test_claude_provider_uses_messages_tool_schema(
     monkeypatch.setattr("deep_reading.llm.request.urlopen", fake_urlopen)
 
     provider = build_provider("claude")
-    result = provider.explain_selection({"id": "ch01", "title": "Intro"}, "Selected text.")
+    result = provider.explain_selection(
+        {"id": "ch01", "title": "Intro"},
+        "Selected text.",
+        language="zh",
+    )
 
     body = captured["body"]
     headers = captured["headers"]
@@ -412,6 +431,7 @@ def test_claude_provider_uses_messages_tool_schema(
     assert body["model"] == "claude-test"  # type: ignore[index]
     assert body["tool_choice"]["name"] == "return_json"  # type: ignore[index]
     assert body["tools"][0]["input_schema"]["required"] == ["explanation"]  # type: ignore[index]
+    assert "Output language: Chinese" in body["messages"][0]["content"]  # type: ignore[index]
     assert headers["X-api-key"] == "secret-value"  # type: ignore[index]
     assert "secret-value" not in json.dumps(body)
 

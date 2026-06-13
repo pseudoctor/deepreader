@@ -19,6 +19,9 @@ package-dir = {"" = "scripts"}
 where = ["scripts"]
 include = ["deep_reading*"]
 
+[tool.setuptools.package-data]
+deep_reading = ["model_catalog.json"]
+
 [project.optional-dependencies]
 dev = [
   "httpx>=0.27",

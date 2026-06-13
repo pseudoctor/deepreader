@@ -58,6 +58,8 @@ check:
 	$(VENV_PYTHON) -m ruff check .
 	$(VENV_PYTHON) -m py_compile scripts/reading_workspace.py scripts/deep_reading/*.py
 	$(VENV_PYTHON) -m pytest
+	npm run build --prefix apps/web
+	npm run build --prefix apps/desktop
 
 clean:
 	rm -rf .pytest_cache .venv scripts/__pycache__ scripts/deep_reading/__pycache__ tests/__pycache__ scripts/deep_reading.egg-info apps/web/dist

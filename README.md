@@ -66,6 +66,61 @@
 
 AI 会根据 skill 自动执行必要的本地脚本，例如初始化工作区、读取章节笔记、查看阅读状态、更新进度等。
 
+## 当前应用入口
+
+本项目现在同时包含 Python 后端、Web 前端和 Electron 桌面端：
+
+```bash
+make install-dev
+make web-install
+make desktop-install
+make api-dev
+make web-dev
+```
+
+开发时通常打开：
+
+- API health check: `http://127.0.0.1:8000/health`
+- Web app: `http://127.0.0.1:5173/`
+
+桌面端开发：
+
+```bash
+make desktop-dev
+```
+
+桌面端默认会启动自己的本地后端，并使用随机可用端口，避免误连到其他
+`127.0.0.1:8000` 服务。如需显式连接已有 API，可设置：
+
+```bash
+DEEP_READING_API_BASE_URL=http://127.0.0.1:8000 make desktop-dev
+```
+
+## AI Provider 设置
+
+Web 和桌面端都通过顶部导航栏的 `Settings / 设置` 打开模型设置。当前预留并支持：
+
+- Local Mock
+- OpenAI
+- Claude
+- Gemini
+- DeepSeek
+- Qwen
+
+设置项包括 Provider、Model、Base URL 和 API Key。API Key 保存后不会在界面回显。
+Web/API 本地开发默认写入 `.deep-reading-local/llm_settings.json`，该目录已被 git 忽略。
+桌面端启动的后端默认写入 Electron `userData` 目录下的 `llm_settings.json`，避免把桌面端密钥落在项目目录中。
+后续仍可以继续迁移到 Electron `safeStorage` 或系统 Keychain。
+
+推荐模型列表位于：
+
+```text
+scripts/deep_reading/model_catalog.json
+```
+
+有 API Key 时，支持 OpenAI-compatible 和 Gemini provider 尝试刷新远端模型列表；
+远端不可用时回退到本地推荐列表，也可以在 Model 输入框中手动输入模型名。
+
 ## 开发与验证
 
 本项目的 Python 入口仍然保持兼容：
@@ -93,6 +148,7 @@ make check
 make lint    # 运行 ruff 静态检查
 make format  # 运行 ruff 代码格式化
 make test    # 只运行测试
+make check   # Python + Web + Desktop 验证
 make clean   # 清理本地虚拟环境和测试缓存
 ```
 

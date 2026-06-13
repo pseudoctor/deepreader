@@ -6,6 +6,7 @@ const workspaceTargetSelectChannel = "workspace:select-target-folder";
 const workspaceCreateChannel = "workspace:create-from-source";
 const obsidianSelectChannel = "obsidian:select-folder";
 const apiBaseUrl =
+  process.env.DEEP_READING_DESKTOP_API_BASE_URL ??
   process.env.DEEP_READING_API_BASE_URL ??
   (process.env.DEEP_READING_DESKTOP_DEV_SERVER ? "/api" : "http://127.0.0.1:8000");
 

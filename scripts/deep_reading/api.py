@@ -25,6 +25,7 @@ from .service import (
     add_weak_concept,
     build_book_argument_map,
     build_concept_map,
+    build_evidence_context,
     build_evidence_table,
     build_one_page_book_account,
     check_feynman_summary,
@@ -91,6 +92,7 @@ class SelectionActionRequest(BaseModel):
     workspace: Path
     chapter_id: str
     selected_text: str
+    language: str | None = None
 
 
 class ChapterSynthesisRequest(BaseModel):
@@ -147,6 +149,13 @@ class EvidenceCardRequest(BaseModel):
     confidence: str = Field(pattern="^(High|Medium|Low)$")
     not_explicit: str = "TBD"
     inference: str = "TBD"
+
+
+class EvidenceContextRequest(BaseModel):
+    workspace: Path
+    query: str
+    chapter_id: str | None = None
+    limit: int = Field(default=5, ge=1, le=20)
 
 
 class WeakConceptRequest(BaseModel):
@@ -273,7 +282,12 @@ def feynman_check(request: FeynmanCheckRequest) -> dict[str, object]:
 
 @app.post("/selection-explanation")
 def selection_explanation(request: SelectionActionRequest) -> dict[str, str]:
-    return explain_selection(request.workspace, request.chapter_id, request.selected_text)
+    return explain_selection(
+        request.workspace,
+        request.chapter_id,
+        request.selected_text,
+        request.language,
+    )
 
 
 @app.post("/selection-review-question")
@@ -282,6 +296,7 @@ def selection_review_question(request: SelectionActionRequest) -> dict[str, str]
         request.workspace,
         request.chapter_id,
         request.selected_text,
+        request.language,
     )
 
 
@@ -339,6 +354,16 @@ def evidence_cards(request: EvidenceCardRequest) -> dict[str, str]:
         request.confidence,
         request.not_explicit,
         request.inference,
+    )
+
+
+@app.post("/evidence-context")
+def evidence_context(request: EvidenceContextRequest) -> dict[str, object]:
+    return build_evidence_context(
+        request.workspace,
+        request.query,
+        request.chapter_id,
+        request.limit,
     )
 
 

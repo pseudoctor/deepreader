@@ -17,8 +17,23 @@ jobs:
         with:
           python-version-file: .python-version
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            apps/web/package-lock.json
+            apps/desktop/package-lock.json
+
       - name: Install development dependencies
         run: make install-dev
+
+      - name: Install web dependencies
+        run: npm ci --prefix apps/web
+
+      - name: Install desktop dependencies
+        run: npm ci --prefix apps/desktop
 
       - name: Run checks
         run: make check

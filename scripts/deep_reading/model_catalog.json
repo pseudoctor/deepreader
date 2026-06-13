@@ -1,0 +1,74 @@
+{
+  "last_reviewed": "2026-06-11",
+  "providers": {
+    "mock": {
+      "default_model": "mock-local",
+      "recommended_models": ["mock-local"]
+    },
+    "openai": {
+      "default_model": "gpt-5.4-mini",
+      "recommended_models": [
+        "gpt-5.5",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.4-nano",
+        "gpt-5.2",
+        "gpt-5-mini",
+        "gpt-4.1",
+        "gpt-4.1-mini",
+        "gpt-4o",
+        "gpt-4o-mini",
+        "o4-mini",
+        "o3",
+        "o3-mini"
+      ]
+    },
+    "claude": {
+      "default_model": "claude-sonnet-4-6",
+      "recommended_models": [
+        "claude-opus-4-8",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5",
+        "claude-sonnet-4-5",
+        "claude-opus-4-1",
+        "claude-3-7-sonnet-latest",
+        "claude-3-5-haiku-latest"
+      ]
+    },
+    "gemini": {
+      "default_model": "gemini-3.5-flash",
+      "recommended_models": [
+        "gemini-3.5-flash",
+        "gemini-3.1-pro-preview",
+        "gemini-3-flash-preview",
+        "gemini-3.1-flash-lite",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite"
+      ]
+    },
+    "deepseek": {
+      "default_model": "deepseek-chat",
+      "recommended_models": [
+        "deepseek-chat",
+        "deepseek-reasoner",
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+        "deepseek-v3.2-exp",
+        "deepseek-v3.1"
+      ]
+    },
+    "qwen": {
+      "default_model": "qwen-plus",
+      "recommended_models": [
+        "qwen-plus",
+        "qwen-max",
+        "qwen-turbo",
+        "qwen3-max",
+        "qwen3-plus",
+        "qwen3-turbo",
+        "qwen3-coder-plus"
+      ]
+    }
+  }
+}

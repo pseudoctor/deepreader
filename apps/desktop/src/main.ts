@@ -1,10 +1,12 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
 
 const isDev = Boolean(process.env.DEEP_READING_DESKTOP_DEV_SERVER);
-const apiBaseUrl = process.env.DEEP_READING_API_BASE_URL ?? "http://127.0.0.1:8000";
+const explicitApiBaseUrl = process.env.DEEP_READING_API_BASE_URL;
+let apiBaseUrl = explicitApiBaseUrl ?? "";
 const workspaceSelectChannel = "workspace:select-folder";
 const sourceSelectChannel = "source:select-path";
 const workspaceTargetSelectChannel = "workspace:select-target-folder";
@@ -66,6 +68,9 @@ function pythonCandidates(): string[] {
 function backendEnv(): NodeJS.ProcessEnv {
   return {
     ...process.env,
+    DEEP_READING_DESKTOP_API_BASE_URL: apiBaseUrl,
+    DEEP_READING_LLM_SETTINGS_PATH:
+      process.env.DEEP_READING_LLM_SETTINGS_PATH ?? path.join(app.getPath("userData"), "llm_settings.json"),
     PYTHONPATH: [scriptsRoot(), ...bundledSitePackagesRoots()].join(path.delimiter),
   };
 }
@@ -130,6 +135,10 @@ async function verifyBackendRuntime(): Promise<string> {
 }
 
 async function isBackendHealthy(): Promise<boolean> {
+  if (!apiBaseUrl) {
+    return false;
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 500);
   try {
@@ -142,6 +151,23 @@ async function isBackendHealthy(): Promise<boolean> {
   }
 }
 
+function findAvailablePort(host = "127.0.0.1"): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.on("error", reject);
+    server.listen(0, host, () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close(() => reject(new Error("Could not allocate a local backend port.")));
+        return;
+      }
+      const port = address.port;
+      server.close(() => resolve(port));
+    });
+  });
+}
+
 async function waitForBackend(): Promise<void> {
   for (let attempt = 0; attempt < 30; attempt += 1) {
     if (await isBackendHealthy()) return;
@@ -152,12 +178,19 @@ async function waitForBackend(): Promise<void> {
 }
 
 async function ensureBackend(): Promise<void> {
-  if (await isBackendHealthy()) return;
+  if (explicitApiBaseUrl) {
+    apiBaseUrl = explicitApiBaseUrl;
+    if (await isBackendHealthy()) return;
+    throw new Error(`Configured Deep Reading backend is not reachable at ${apiBaseUrl}`);
+  }
 
   const backendPython = await verifyBackendRuntime();
+  const backendPort = await findAvailablePort();
+  apiBaseUrl = `http://127.0.0.1:${backendPort}`;
+  process.env.DEEP_READING_DESKTOP_API_BASE_URL = apiBaseUrl;
   backendProcess = spawn(
     backendPython,
-    ["-m", "uvicorn", "deep_reading.api:app", "--host", "127.0.0.1", "--port", "8000"],
+    ["-m", "uvicorn", "deep_reading.api:app", "--host", "127.0.0.1", "--port", String(backendPort)],
     {
       cwd: app.isPackaged ? process.resourcesPath : repoRoot(),
       env: backendEnv(),
@@ -222,7 +255,14 @@ function createWindow(): void {
   });
 
   window.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    try {
+      const protocol = new URL(url).protocol;
+      if (protocol === "http:" || protocol === "https:") {
+        void shell.openExternal(url);
+      }
+    } catch {
+      return { action: "deny" };
+    }
     return { action: "deny" };
   });
 
