@@ -227,10 +227,10 @@ button:disabled {
   color: #1d2525;
   font-size: 0.78rem;
   display: grid;
-  gap: 3px;
+  gap: 4px;
   line-height: 1.35;
   overflow: hidden;
-  padding: 7px 9px;
+  padding: 9px 10px;
   text-align: left;
 }
 
@@ -254,6 +254,7 @@ button:disabled {
 
 .recent-workspace-list span {
   color: #53625d;
+  font-size: 0.74rem;
 }
 
 .recent-workspace-list em {
@@ -407,7 +408,7 @@ textarea {
 .learning-loop-metrics {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .learning-loop-metrics p {
@@ -427,7 +428,9 @@ textarea {
 }
 
 .learning-loop-metrics span,
-.weak-chapter-list > strong {
+.weak-chapter-list > strong,
+.weak-concept-list > strong,
+.chapter-mastery-list > strong {
   color: #53625d;
   font-size: 0.74rem;
   font-weight: 700;
@@ -436,13 +439,15 @@ textarea {
 
 .weak-chapter-list,
 .weak-concept-list,
+.chapter-mastery-list,
 .weak-concept-form {
   display: grid;
   gap: 6px;
 }
 
 .weak-chapter-list button,
-.weak-concept-list button {
+.weak-concept-list button,
+.chapter-mastery-list button {
   background: #fffefa;
   display: grid;
   gap: 3px;
@@ -452,7 +457,8 @@ textarea {
 }
 
 .weak-chapter-list button span,
-.weak-concept-list button span {
+.weak-concept-list button span,
+.chapter-mastery-list button span {
   color: #1d2525;
   font-size: 0.82rem;
   line-height: 1.35;
@@ -462,11 +468,62 @@ textarea {
 }
 
 .weak-chapter-list button em,
-.weak-concept-list button em {
+.weak-concept-list button em,
+.chapter-mastery-list button em {
   color: #8a4d26;
   font-size: 0.74rem;
   font-style: normal;
   font-weight: 700;
+}
+
+.mastery-meter,
+.chapter-list i,
+.chapter-mastery-list i {
+  background: #dbe3dd;
+  display: block;
+  height: 6px;
+  overflow: hidden;
+}
+
+.mastery-meter span,
+.chapter-list i b,
+.chapter-mastery-list i b {
+  background: linear-gradient(90deg, #2f6a5d, #8aa66f);
+  display: block;
+  height: 100%;
+}
+
+.learning-next-action {
+  background: #fffefa;
+  border-color: #b9c5be;
+  display: grid;
+  gap: 4px;
+  min-height: 68px;
+  padding: 10px;
+  text-align: left;
+}
+
+.learning-next-action span {
+  color: #53625d;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.learning-next-action strong {
+  color: #214d45;
+  font-size: 0.92rem;
+}
+
+.learning-next-action em {
+  color: #68756f;
+  font-size: 0.78rem;
+  font-style: normal;
+}
+
+.capture-form .learning-next-action {
+  background: #fffefa;
+  border-color: #b9c5be;
+  color: #1d2525;
 }
 
 .weak-concept-form {
@@ -568,6 +625,11 @@ textarea {
   font-size: 0.78rem;
   font-style: normal;
   grid-column: 2;
+}
+
+.chapter-list i {
+  grid-column: 2;
+  height: 4px;
 }
 
 .reader-pane {

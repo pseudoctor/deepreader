@@ -201,6 +201,9 @@ function App() {
       current: nextStatus.current,
       progress: nextStatus.progress,
       next_action: nextStatus.continue_reading.next_action,
+      average_mastery: nextStatus.learning_loop.average_mastery,
+      review_ready_count: nextStatus.learning_loop.review_ready.length,
+      weak_count: nextStatus.learning_loop.weak_chapters.length,
     };
     setWorkspaceLibrary((current) => [
       item,
@@ -213,6 +216,24 @@ function App() {
     return Object.entries(progress)
       .map(([key, value]) => `${key}: ${value}`)
       .join(" · ");
+  }
+
+  function formatOpenedAt(value: string): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime()) || date.getTime() === 0) return t.notOpenedYet;
+    return date.toLocaleDateString(language === "zh" ? "zh-CN" : "en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  function chapterMasteryPercent(chapterId: string): number {
+    return (
+      status?.learning_loop.chapters.find((chapter) => chapter.id === chapterId)?.mastery_score ??
+      0
+    );
   }
 
   useEffect(() => {
@@ -1197,6 +1218,15 @@ function App() {
                 >
                   <strong>{item.title ?? workspaceTitle(item.path)}</strong>
                   <span>{progressSummary(item.progress)}</span>
+                  <span>
+                    {t.lastOpened}: {formatOpenedAt(item.last_opened_at)}
+                  </span>
+                  {typeof item.average_mastery === "number" && (
+                    <span>
+                      {t.averageMastery} {item.average_mastery}% · {t.reviewReady}{" "}
+                      {item.review_ready_count ?? 0} · {t.weakChapters} {item.weak_count ?? 0}
+                    </span>
+                  )}
                   {item.next_action && (
                     <em>{formatActionLabel(t, item.next_action)}</em>
                   )}
@@ -1267,18 +1297,26 @@ function App() {
         </form>
 
         <nav className="chapter-list" aria-label={t.chapters}>
-          {chapters.map((chapter) => (
-            <button
-              key={chapter.id}
-              className={activeChapter?.id === chapter.id ? "active" : ""}
-              onClick={() => void loadChapter(chapter.id)}
-              type="button"
-            >
-              <span>{chapter.id}</span>
-              <strong>{chapter.title}</strong>
-              <em>{t.stateLabels[chapter.state as keyof typeof t.stateLabels] ?? chapter.state}</em>
-            </button>
-          ))}
+          {chapters.map((chapter) => {
+            const mastery = chapterMasteryPercent(chapter.id);
+            return (
+              <button
+                key={chapter.id}
+                className={activeChapter?.id === chapter.id ? "active" : ""}
+                onClick={() => void loadChapter(chapter.id)}
+                type="button"
+              >
+                <span>{chapter.id}</span>
+                <strong>{chapter.title}</strong>
+                <em>
+                  {t.stateLabels[chapter.state as keyof typeof t.stateLabels] ?? chapter.state}
+                </em>
+                <i aria-label={`${t.masteryScore} ${mastery}%`}>
+                  <b style={{ width: `${mastery}%` }} />
+                </i>
+              </button>
+            );
+          })}
         </nav>
         </aside>
 
@@ -1919,13 +1957,61 @@ function App() {
                     <span>{t.averageMastery}</span>
                   </p>
                   <p>
+                    <strong>{status.learning_loop.completed_count}</strong>
+                    <span>{t.completedChapters}</span>
+                  </p>
+                  <p>
                     <strong>{status.learning_loop.review_ready.length}</strong>
                     <span>{t.reviewReady}</span>
                   </p>
+                  <p>
+                    <strong>{status.learning_loop.weak_chapters.length}</strong>
+                    <span>{t.weakChapters}</span>
+                  </p>
                 </div>
+                <div className="mastery-meter" aria-label={`${t.averageMastery} ${status.learning_loop.average_mastery}%`}>
+                  <span style={{ width: `${status.learning_loop.average_mastery}%` }} />
+                </div>
+                <button
+                  className="learning-next-action"
+                  type="button"
+                  disabled={busy || !status.continue_reading.next_action.chapter_id}
+                  onClick={() => {
+                    const chapterId = status.continue_reading.next_action.chapter_id;
+                    if (chapterId) void loadChapter(chapterId);
+                  }}
+                >
+                  <span>{t.nextStep}</span>
+                  <strong>{formatActionLabel(t, status.continue_reading.next_action)}</strong>
+                  {status.continue_reading.next_action.chapter_id && (
+                    <em>
+                      {status.continue_reading.next_action.chapter_id}:{" "}
+                      {status.continue_reading.next_action.title}
+                    </em>
+                  )}
+                </button>
                 {status.learning_loop.synthesis_due && (
                   <p className="success">{t.synthesisDue}</p>
                 )}
+                <div className="chapter-mastery-list">
+                  <strong>{t.chapterMastery}</strong>
+                  {status.learning_loop.chapters.slice(0, 6).map((chapter) => (
+                    <button
+                      key={chapter.id}
+                      type="button"
+                      onClick={() => void loadChapter(chapter.id)}
+                      disabled={busy}
+                    >
+                      <span>
+                        {chapter.id}: {chapter.title}
+                      </span>
+                      <em>{chapter.mastery_score}%</em>
+                      <i>
+                        <b style={{ width: `${chapter.mastery_score}%` }} />
+                      </i>
+                    </button>
+                  ))}
+                </div>
                 <div className="weak-chapter-list">
                   <strong>{t.weakChapters}</strong>
                   {status.learning_loop.weak_chapters.length === 0 ? (

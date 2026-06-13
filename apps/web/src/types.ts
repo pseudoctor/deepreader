@@ -169,6 +169,9 @@ export type WorkspaceLibraryItem = {
   current?: string | null;
   progress?: Record<string, number>;
   next_action?: NextAction;
+  average_mastery?: number;
+  review_ready_count?: number;
+  weak_count?: number;
 };
 
 export type ConceptMapNode = {
