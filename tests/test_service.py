@@ -27,6 +27,7 @@ from deep_reading.service import (
     save_active_recall_cards,
     save_book_argument_map,
     save_concept_map,
+    save_evidence_context,
     save_evidence_table,
     save_one_page_book_account,
     synthesize_chapter_window,
@@ -363,6 +364,19 @@ def test_build_evidence_context_respects_limit(tmp_path: Path) -> None:
     result = build_evidence_context(workspace, "chapter", limit=1)
 
     assert len(result["matches"]) == 1
+
+
+def test_save_evidence_context_writes_grounded_markdown(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    result = build_evidence_context(workspace, "short sample", "ch01")
+
+    saved = save_evidence_context(workspace, result)
+
+    assert saved["kind"] == "evidence_context"
+    content = Path(saved["path"]).read_text(encoding="utf-8")
+    assert "## Evidence Context" in content
+    assert "**Query** short sample" in content
+    assert "**Locator** ch01: Intro" in content
 
 
 def test_build_concept_map_uses_chapters_evidence_and_weak_concepts(tmp_path: Path) -> None:

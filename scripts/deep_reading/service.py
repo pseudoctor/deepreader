@@ -1083,6 +1083,41 @@ def build_evidence_context(
     }
 
 
+def format_evidence_context(result: dict[str, object]) -> str:
+    matches = result.get("matches", [])
+    if not isinstance(matches, list):
+        raise ExtractionError("Evidence context result has invalid matches")
+
+    lines = ["## Evidence Context", "", f"**Query** {result.get('query', '')}", ""]
+    if not matches:
+        lines.append("_No grounded matches found._")
+        return "\n".join(lines)
+
+    for index, match in enumerate(matches, start=1):
+        if not isinstance(match, dict):
+            continue
+        lines.extend(
+            [
+                f"### Match {index}",
+                "",
+                f"**Source Type** {match.get('source_type', '')}",
+                f"**Locator** {match.get('locator', '')}",
+                f"**Score** {match.get('score', '')}",
+                "",
+                str(match.get("snippet", "")).strip(),
+                "",
+            ]
+        )
+    return "\n".join(lines).rstrip()
+
+
+def save_evidence_context(workspace: Path, result: dict[str, object]) -> dict[str, str]:
+    ensure_workspace(workspace)
+    path = workspace / "evidence_context.md"
+    append_text(path, format_evidence_context(result))
+    return {"kind": "evidence_context", "path": str(path)}
+
+
 def attach_evidence_context(
     workspace: Path,
     chapter: dict[str, object],
@@ -1219,7 +1254,11 @@ def generate_selection_review_question(
 ) -> dict[str, str]:
     chapter = get_chapter(workspace, chapter_id)
     try:
-        return build_provider().generate_selection_review_question(chapter, selected_text, language)
+        return build_provider().generate_selection_review_question(
+            attach_evidence_context(workspace, chapter, selected_text),
+            selected_text,
+            language,
+        )
     except (RuntimeError, ValueError) as exc:
         raise ExtractionError(str(exc)) from exc
 

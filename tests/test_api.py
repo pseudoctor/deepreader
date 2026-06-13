@@ -754,6 +754,26 @@ def test_evidence_context_endpoint_rejects_empty_query(tmp_path: Path) -> None:
     assert response.json()["error"] == "Evidence context query cannot be empty"
 
 
+def test_save_evidence_context_endpoint_writes_markdown(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+    result = client.post(
+        "/evidence-context",
+        json={"workspace": str(workspace), "chapter_id": "ch01", "query": "short sample"},
+    ).json()
+
+    response = client.post(
+        "/evidence-context/save",
+        json={"workspace": str(workspace), "result": result},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["kind"] == "evidence_context"
+    content = Path(data["path"]).read_text(encoding="utf-8")
+    assert "**Query** short sample" in content
+
+
 def test_obsidian_export_endpoint_exports_workspace_markdown(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     vault_folder = tmp_path / "vault" / "reading"

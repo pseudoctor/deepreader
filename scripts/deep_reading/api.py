@@ -39,6 +39,7 @@ from .service import (
     save_active_recall_cards,
     save_book_argument_map,
     save_concept_map,
+    save_evidence_context,
     save_evidence_table,
     save_one_page_book_account,
     synthesize_chapter_window,
@@ -156,6 +157,11 @@ class EvidenceContextRequest(BaseModel):
     query: str
     chapter_id: str | None = None
     limit: int = Field(default=5, ge=1, le=20)
+
+
+class SaveEvidenceContextRequest(BaseModel):
+    workspace: Path
+    result: dict[str, object]
 
 
 class WeakConceptRequest(BaseModel):
@@ -365,6 +371,11 @@ def evidence_context(request: EvidenceContextRequest) -> dict[str, object]:
         request.chapter_id,
         request.limit,
     )
+
+
+@app.post("/evidence-context/save")
+def save_context(request: SaveEvidenceContextRequest) -> dict[str, str]:
+    return save_evidence_context(request.workspace, request.result)
 
 
 @app.post("/evidence-table")

@@ -789,6 +789,7 @@ class LLMProvider:
         result = self.complete_json(
             f"Generate a review card for {chapter['id']}: {chapter['title']}\n\n"
             f"{language_instruction}\n\n"
+            f"{self.grounded_context_prompt(chapter)}\n\n"
             f"{selected_text}",
             "selection_review_question",
         )

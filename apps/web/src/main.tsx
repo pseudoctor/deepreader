@@ -674,6 +674,26 @@ function App() {
     setNoteText(`${match.locator}\n\n${match.snippet}`);
   }
 
+  async function saveEvidenceContext() {
+    if (!evidenceContextResult) return;
+    setBusy(true);
+    setError("");
+    try {
+      await apiRequest("/evidence-context/save", {
+        method: "POST",
+        body: JSON.stringify({
+          workspace,
+          result: evidenceContextResult,
+        }),
+      });
+      setMessage(t.evidenceContextSaved);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedSaveEvidenceContext);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function updateState(nextState: string) {
     if (!activeChapter) return;
     setBusy(true);
@@ -1771,6 +1791,13 @@ function App() {
                     </article>
                   ))
                 )}
+                <button
+                  type="button"
+                  onClick={() => void saveEvidenceContext()}
+                  disabled={busy}
+                >
+                  {t.saveEvidenceContext}
+                </button>
               </section>
             )}
           </form>
