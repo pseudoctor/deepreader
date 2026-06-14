@@ -756,9 +756,12 @@ class LLMProvider:
         self,
         chapter: dict[str, object],
         summary: str,
+        language: str | None = None,
     ) -> dict[str, object]:
+        language_instruction = selection_language_instruction(language, summary)
         return self.complete_json(
             f"Check this chapter summary for {chapter['id']}: {chapter['title']}"
+            f"\n\n{language_instruction}\n\n"
             f"{self.grounded_context_prompt(chapter)}\n\n{summary}",
             "feynman_check",
         )
@@ -808,6 +811,7 @@ class MockLLMProvider(LLMProvider):
         self,
         chapter: dict[str, object],
         summary: str,
+        language: str | None = None,
     ) -> dict[str, object]:
         stripped = summary.strip()
         if not stripped:
@@ -827,21 +831,35 @@ class MockLLMProvider(LLMProvider):
             if len(sentence) < 40
             or any(contains_marker(sentence.casefold(), marker) for marker in VAGUE_MARKERS)
         ]
+        use_chinese = resolve_selection_language(language, stripped) == "zh"
         missing_causal_links = []
         if not any(contains_marker(lowered, marker) for marker in CAUSAL_MARKERS):
             missing_causal_links.append(
-                "The summary does not clearly explain the causal link or mechanism."
+                "这段复述还没有清楚说明因果链或机制。"
+                if use_chinese
+                else "The summary does not clearly explain the causal link or mechanism."
             )
 
         unsupported_leaps = []
         if not any(contains_marker(lowered, marker) for marker in EVIDENCE_MARKERS):
-            unsupported_leaps.append("The summary does not name a concrete example or evidence.")
+            unsupported_leaps.append(
+                "这段复述还没有点出具体例子或证据。"
+                if use_chinese
+                else "The summary does not name a concrete example or evidence."
+            )
 
-        rewritten_version = (
-            f"In {chapter['id']}: {chapter['title']}, the chapter appears to argue that "
-            f"{sentences[0] if sentences else stripped}. To make the explanation stronger, add the "
-            "causal mechanism and one concrete piece of evidence from the text."
-        )
+        if use_chinese:
+            rewritten_version = (
+                f"在 {chapter['id']}: {chapter['title']} 中，本章似乎主张："
+                f"{sentences[0] if sentences else stripped}。为了让解释更有力，"
+                "请补上因果机制，并加入一条来自原文的具体证据。"
+            )
+        else:
+            rewritten_version = (
+                f"In {chapter['id']}: {chapter['title']}, the chapter appears to argue that "
+                f"{sentences[0] if sentences else stripped}. To make the explanation stronger, "
+                "add the causal mechanism and one concrete piece of evidence from the text."
+            )
         return {
             "chapter_id": chapter["id"],
             "title": chapter["title"],
@@ -971,15 +989,18 @@ class OpenAIProvider(LLMProvider):
         self,
         chapter: dict[str, object],
         summary: str,
+        language: str | None = None,
     ) -> dict[str, object]:
         stripped = summary.strip()
         if not stripped:
             raise ValueError("Summary cannot be empty")
 
+        language_instruction = selection_language_instruction(language, stripped)
         result = self.complete_json(
             (
                 f"Chapter id: {chapter['id']}\n"
                 f"Chapter title: {chapter['title']}\n\n"
+                f"{language_instruction}\n\n"
                 "Check this Feynman-style summary for accuracy, vagueness, missing causal "
                 "links, unsupported leaps, and then rewrite it more clearly.\n\n"
                 f"Summary:\n{stripped}"

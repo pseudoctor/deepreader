@@ -19,6 +19,10 @@ ALLOWED_NOTE_TYPES = {"Quote", "My Thought", "AI Explanation", "Question"}
 LEARNING_LOOP_FILE = "learning_loop.json"
 
 
+def wants_chinese(language: str | None) -> bool:
+    return (language or "").strip().lower() == "zh"
+
+
 def chapter_summary(chapter: dict[str, object], state_value: str) -> dict[str, object]:
     return {
         "id": chapter["id"],
@@ -95,8 +99,11 @@ def learning_journal_item(
     content: str,
     source_path: Path,
     index: int,
+    target_text: str = "",
+    block_start: int | None = None,
+    block_end: int | None = None,
 ) -> dict[str, object]:
-    return {
+    item: dict[str, object] = {
         "id": f"{source_path.name}:{index}",
         "kind": kind,
         "chapter_id": chapter_id,
@@ -105,6 +112,41 @@ def learning_journal_item(
         "content": content.strip(),
         "source_path": str(source_path),
     }
+    if target_text.strip():
+        item["target_text"] = target_text.strip()
+    if block_start is not None and block_end is not None:
+        item["block_start"] = block_start
+        item["block_end"] = block_end
+        item["editable"] = True
+    return item
+
+
+def journal_target_text(kind: str, content: str) -> str:
+    text = content
+    text = re.sub(r"^\*\*(?:Locator|Source Locator)\*\*.*$", "", text, flags=re.I | re.M)
+    text = re.sub(r"^\*\*[^*]+\*\*\s*", "", text, flags=re.M)
+    text = re.sub(r"^>\s?", "", text, flags=re.M)
+    text = re.sub(r"^#+\s*", "", text, flags=re.M)
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if kind == "quote":
+        return "\n".join(lines)
+    return next((line for line in lines if len(line) >= 8), lines[0] if lines else "")
+
+
+def iter_chapter_note_blocks(content: str) -> list[re.Match[str]]:
+    pattern = re.compile(
+        r"(?ms)^(?:## Quote\b.*?|###\s+.*?)(?=^##\s+|^###\s+|\Z)"
+    )
+    return list(pattern.finditer(content))
+
+
+def infer_chapter_id_from_locator(locator: str, titles: dict[str, str]) -> str | None:
+    for chapter_id, title in titles.items():
+        if chapter_id and chapter_id in locator:
+            return chapter_id
+        if title and title in locator:
+            return chapter_id
+    return None
 
 
 def parse_chapter_note_items(workspace: Path, titles: dict[str, str]) -> list[dict[str, object]]:
@@ -116,8 +158,8 @@ def parse_chapter_note_items(workspace: Path, titles: dict[str, str]) -> list[di
         chapter_id = path.name.split("-", 1)[0]
         chapter_title = titles.get(chapter_id, chapter_id)
         content = path.read_text(encoding="utf-8")
-        blocks = re.split(r"\n(?=### |## Quote\b)", content)
-        for block in blocks:
+        for match in iter_chapter_note_blocks(content):
+            block = match.group(0)
             stripped = block.strip()
             if not stripped:
                 continue
@@ -132,6 +174,9 @@ def parse_chapter_note_items(workspace: Path, titles: dict[str, str]) -> list[di
                         content=body,
                         source_path=path,
                         index=len(items) + 1,
+                        target_text=journal_target_text("quote", body),
+                        block_start=match.start(),
+                        block_end=match.end(),
                     )
                 )
                 continue
@@ -159,6 +204,9 @@ def parse_chapter_note_items(workspace: Path, titles: dict[str, str]) -> list[di
                     content=body,
                     source_path=path,
                     index=len(items) + 1,
+                    target_text=journal_target_text(kind, body),
+                    block_start=match.start(),
+                    block_end=match.end(),
                 )
             )
     return items
@@ -187,7 +235,7 @@ def parse_review_card_items(workspace: Path) -> list[dict[str, object]]:
     return items
 
 
-def parse_evidence_card_items(workspace: Path) -> list[dict[str, object]]:
+def parse_evidence_card_items(workspace: Path, titles: dict[str, str]) -> list[dict[str, object]]:
     path = workspace / "evidence_cards.md"
     items: list[dict[str, object]] = []
     for index, card in enumerate(build_evidence_table(workspace).get("cards", []), start=1):
@@ -201,7 +249,7 @@ def parse_evidence_card_items(workspace: Path) -> list[dict[str, object]]:
         items.append(
             learning_journal_item(
                 kind="evidence_card",
-                chapter_id=None,
+                chapter_id=infer_chapter_id_from_locator(locator, titles),
                 title=claim or "Evidence Card",
                 locator=locator,
                 content="\n".join(
@@ -215,6 +263,7 @@ def parse_evidence_card_items(workspace: Path) -> list[dict[str, object]]:
                 ),
                 source_path=path,
                 index=index,
+                target_text=support,
             )
         )
     return items
@@ -276,7 +325,7 @@ def build_learning_journal(workspace: Path) -> dict[str, object]:
     items = [
         *parse_chapter_note_items(workspace, titles),
         *parse_review_card_items(workspace),
-        *parse_evidence_card_items(workspace),
+        *parse_evidence_card_items(workspace, titles),
         *parse_evidence_context_items(workspace),
         *parse_weak_concept_items(workspace, titles),
     ]
@@ -293,6 +342,60 @@ def build_learning_journal(workspace: Path) -> dict[str, object]:
             for chapter_id, title in titles.items()
         ],
     }
+
+
+def find_editable_learning_journal_item(workspace: Path, item_id: str) -> dict[str, object]:
+    journal = build_learning_journal(workspace)
+    for item in journal["items"]:
+        if isinstance(item, dict) and item.get("id") == item_id:
+            if not item.get("editable"):
+                raise ExtractionError("Journal item is not editable")
+            return item
+    raise ExtractionError("Journal item not found")
+
+
+def journal_item_source_path(workspace: Path, item: dict[str, object]) -> Path:
+    path = Path(str(item.get("source_path", "")))
+    resolved_workspace = workspace.resolve()
+    resolved_path = path.resolve()
+    try:
+        resolved_path.relative_to(resolved_workspace)
+    except ValueError as exc:
+        raise ExtractionError("Journal item source is outside the workspace") from exc
+    if not resolved_path.exists():
+        raise ExtractionError("Journal item source file not found")
+    return resolved_path
+
+
+def update_learning_journal_item(workspace: Path, item_id: str, content: str) -> dict[str, object]:
+    ensure_workspace(workspace)
+    new_content = content.strip()
+    if not new_content:
+        raise ExtractionError("Journal item content cannot be empty")
+    item = find_editable_learning_journal_item(workspace, item_id)
+    path = journal_item_source_path(workspace, item)
+    text = path.read_text(encoding="utf-8")
+    start = int(item["block_start"])
+    end = int(item["block_end"])
+    block = text[start:end]
+    heading, separator, _body = block.partition("\n")
+    if not separator:
+        raise ExtractionError("Journal item block is invalid")
+    replacement = f"{heading.rstrip()}\n\n{new_content}\n"
+    path.write_text(text[:start] + replacement + text[end:], encoding="utf-8")
+    return {"status": "updated", "id": item_id}
+
+
+def delete_learning_journal_item(workspace: Path, item_id: str) -> dict[str, object]:
+    ensure_workspace(workspace)
+    item = find_editable_learning_journal_item(workspace, item_id)
+    path = journal_item_source_path(workspace, item)
+    text = path.read_text(encoding="utf-8")
+    start = int(item["block_start"])
+    end = int(item["block_end"])
+    updated = f"{text[:start].rstrip()}\n\n{text[end:].lstrip()}".rstrip() + "\n"
+    path.write_text(updated, encoding="utf-8")
+    return {"status": "deleted", "id": item_id}
 
 
 def load_learning_loop_state(workspace: Path) -> dict[str, object]:
@@ -635,6 +738,7 @@ def synthesize_chapter_window(
     workspace: Path,
     start_chapter_id: str,
     count: int = 3,
+    language: str | None = None,
 ) -> dict[str, object]:
     metadata = load_metadata(workspace)
     state = load_state(workspace)
@@ -651,6 +755,28 @@ def synthesize_chapter_window(
     ]
     labels = [f"{chapter['id']}: {chapter['title']}" for chapter in summaries]
     joined_labels = "; ".join(labels)
+    if wants_chinese(language):
+        return {
+            "start_chapter_id": summaries[0]["id"],
+            "chapter_count": len(summaries),
+            "chapters": summaries,
+            "common_question": (
+                "这些章节共同澄清了什么更大的问题？请以章节标题为锚点："
+                f"{joined_labels}。"
+            ),
+            "recurring_concepts": [
+                "找出这些章节中反复出现的术语、例子、地点、行动者或机制。",
+                "找出哪些概念在章节推进中变得更精确，或含义发生了变化。",
+            ],
+            "argument_progression": (
+                "说明作者的论证如何从第一章推进到最后一章：引入了什么、检验了什么、"
+                "哪些结论变得更受限定？"
+            ),
+            "open_questions": [
+                "这些章节之后，哪一个主张仍然需要更强证据？",
+                "哪些地方还留下了冲突、例外或未解释清楚的机制？",
+            ],
+        }
     return {
         "start_chapter_id": summaries[0]["id"],
         "chapter_count": len(summaries),
@@ -674,7 +800,7 @@ def synthesize_chapter_window(
     }
 
 
-def build_book_argument_map(workspace: Path) -> dict[str, object]:
+def build_book_argument_map(workspace: Path, language: str | None = None) -> dict[str, object]:
     metadata = load_metadata(workspace)
     state = load_state(workspace)
     chapters = [
@@ -689,6 +815,30 @@ def build_book_argument_map(workspace: Path) -> dict[str, object]:
 
     first = chapters[0]
     last = chapters[-1]
+    if wants_chinese(language):
+        return {
+            "chapter_count": len(chapters),
+            "chapters": chapters,
+            "core_problem": (
+                "整本书为什么有必要存在？先从 "
+                f"{first['id']}: {first['title']} 出发，再追踪后续章节如何限定答案。"
+            ),
+            "core_answer": "用一段话写出本书主答案，并区分作者的主张和证据能够直接证明的部分。",
+            "argument_chain": [
+                f"开场框架：{first['id']}: {first['title']}",
+                "中段推进：找出作者加入机制、比较、反例或历史检验的章节。",
+                f"最终位置：{last['id']}: {last['title']}",
+            ],
+            "key_evidence": [
+                "列出最强的具体例子、比较、日期、地点或原文片段。",
+                "每条证据都要说明它支持哪个主张，以及可信度如何。",
+            ],
+            "rebuttals_and_limits": [
+                "什么替代解释会挑战本书主答案？",
+                "哪些章节更多依赖推论而非直接证据？",
+                "一个怀疑的读者还需要验证什么？",
+            ],
+        }
     return {
         "chapter_count": len(chapters),
         "chapters": chapters,
@@ -732,7 +882,7 @@ def extract_evidence_lines(workspace: Path, limit: int = 5) -> list[str]:
     return lines
 
 
-def build_one_page_book_account(workspace: Path) -> dict[str, object]:
+def build_one_page_book_account(workspace: Path, language: str | None = None) -> dict[str, object]:
     metadata = load_metadata(workspace)
     state = load_state(workspace)
     learning_loop = build_learning_loop(workspace, metadata, state)
@@ -763,6 +913,31 @@ def build_one_page_book_account(workspace: Path) -> dict[str, object]:
 
     title = str(metadata.get("title") or workspace.name)
     evidence = extract_evidence_lines(workspace)
+    if wants_chinese(language):
+        return {
+            "title": title,
+            "chapter_count": len(chapters),
+            "completed_count": learning_loop["completed_count"],
+            "average_mastery": learning_loop["average_mastery"],
+            "core_account": (
+                f"{title} 当前检测到 {len(chapters)} 个章节。"
+                "这个有证据约束的一页书账，应从开篇章节出发，沿着已经完成或复习过的"
+                "关键章节说明中心问题，同时区分直接证据和你的推论。"
+            ),
+            "core_argument_chain": [
+                "开场框架：" + str(chapter_labels[0]),
+                "发展过程：比较后续章节如何加入机制、证据、例外或适用范围。",
+                "当前终点：" + str(chapter_labels[-1]),
+            ],
+            "strongest_evidence": evidence
+            or ["尚未保存证据卡；在把这份书账视为有证据支撑前，请先添加证据卡。"],
+            "weak_points": weak_points or ["尚未记录薄弱概念或薄弱章节。"],
+            "application_prompts": [
+                "这本书改变了你的哪个决策、项目或研究问题？",
+                "哪个主张有直接证据支持，哪一部分仍然只是你的推论？",
+                "在应用本书论证前，你下一步会测试或查证什么？",
+            ],
+        }
     return {
         "title": title,
         "chapter_count": len(chapters),
@@ -878,7 +1053,7 @@ def strip_markdown_label(line: str, label: str) -> str:
     return line.removeprefix(prefix).strip()
 
 
-def build_evidence_table(workspace: Path) -> dict[str, object]:
+def build_evidence_table(workspace: Path, language: str | None = None) -> dict[str, object]:
     ensure_workspace(workspace)
     content = read_text_if_exists(workspace / "evidence_cards.md")
     cards: list[dict[str, str]] = []
@@ -936,6 +1111,7 @@ def build_evidence_table(workspace: Path) -> dict[str, object]:
     return {
         "card_count": len(cards),
         "cards": cards,
+        "language": "zh" if wants_chinese(language) else "en",
     }
 
 
@@ -976,11 +1152,11 @@ def save_evidence_table(workspace: Path, result: dict[str, object]) -> dict[str,
     return {"kind": "evidence_table", "path": str(path)}
 
 
-def build_concept_map(workspace: Path) -> dict[str, object]:
+def build_concept_map(workspace: Path, language: str | None = None) -> dict[str, object]:
     metadata = load_metadata(workspace)
     state = load_state(workspace)
     learning_loop = build_learning_loop(workspace, metadata, state)
-    evidence_table = build_evidence_table(workspace)
+    evidence_table = build_evidence_table(workspace, language)
     chapters = learning_loop["chapters"]
     weak_concepts = learning_loop["weak_concepts"]
     evidence_cards = evidence_table["cards"]
@@ -1009,8 +1185,8 @@ def build_concept_map(workspace: Path) -> dict[str, object]:
             {
                 "source": str(previous["id"]),
                 "target": str(current["id"]),
-                "relation": "progresses_to",
-                "evidence": "chapter order",
+                "relation": "推进到" if wants_chinese(language) else "progresses_to",
+                "evidence": "章节顺序" if wants_chinese(language) else "chapter order",
             }
         )
 
@@ -1035,8 +1211,11 @@ def build_concept_map(workspace: Path) -> dict[str, object]:
             {
                 "source": node_id,
                 "target": chapter_id,
-                "relation": "unclear_in",
-                "evidence": str(item.get("note", "")).strip() or "manual weak concept",
+                "relation": "不清楚于" if wants_chinese(language) else "unclear_in",
+                "evidence": (
+                    str(item.get("note", "")).strip()
+                    or ("手动记录的薄弱概念" if wants_chinese(language) else "manual weak concept")
+                ),
             }
         )
 
@@ -1071,8 +1250,10 @@ def build_concept_map(workspace: Path) -> dict[str, object]:
                 {
                     "source": node_id,
                     "target": target,
-                    "relation": "supports",
-                    "evidence": support or locator or "evidence card",
+                    "relation": "支持" if wants_chinese(language) else "supports",
+                    "evidence": support
+                    or locator
+                    or ("证据卡" if wants_chinese(language) else "evidence card"),
                 }
             )
 
@@ -1081,6 +1262,7 @@ def build_concept_map(workspace: Path) -> dict[str, object]:
         "link_count": len(links),
         "nodes": nodes,
         "links": links,
+        "language": "zh" if wants_chinese(language) else "en",
     }
 
 
@@ -1362,13 +1544,39 @@ def save_book_argument_map(workspace: Path, result: dict[str, object]) -> dict[s
     return {"kind": "book_argument_map", "path": str(path)}
 
 
-def generate_active_recall(workspace: Path, chapter_id: str) -> dict[str, object]:
+def generate_active_recall(
+    workspace: Path,
+    chapter_id: str,
+    language: str | None = None,
+) -> dict[str, object]:
     metadata = load_metadata(workspace)
     state = load_state(workspace)
     chapter = get_chapter(workspace, chapter_id)
     state_value = str(state.get("chapters", {}).get(chapter_id, "not-started"))
     title = str(chapter["title"])
     guide = build_reading_guide(chapter_id, title)
+    if wants_chinese(language):
+        return {
+            "chapter_id": chapter_id,
+            "title": title,
+            "state": state_value,
+            "questions": [
+                {
+                    "question": guide["recall_prompt"],
+                    "answer_hint": "先说出本章主张，再补一个具体证据。",
+                },
+                {
+                    "question": guide["core_question"],
+                    "answer_hint": "先用自己的话说清楚问题，再回看笔记校正。",
+                },
+                {
+                    "question": f"{chapter_id}: {title} 如何推进整本书的大论证？",
+                    "answer_hint": "说明它和前一章或后一章的关系，不要只复述本章内容。",
+                },
+            ],
+            "eligible_for_review": state_value in {"done", "review"},
+            "chapter_count": len(metadata.get("chapters", [])),
+        }
     return {
         "chapter_id": chapter_id,
         "title": title,
@@ -1436,12 +1644,18 @@ def read_chapter(workspace: Path, chapter_id: str) -> dict[str, object]:
     }
 
 
-def check_feynman_summary(workspace: Path, chapter_id: str, summary: str) -> dict[str, object]:
+def check_feynman_summary(
+    workspace: Path,
+    chapter_id: str,
+    summary: str,
+    language: str | None = None,
+) -> dict[str, object]:
     chapter = get_chapter(workspace, chapter_id)
     try:
         return build_provider().check_feynman_summary(
             attach_evidence_context(workspace, chapter, summary),
             summary,
+            language,
         )
     except (RuntimeError, ValueError) as exc:
         raise ExtractionError(str(exc)) from exc
@@ -1597,5 +1811,9 @@ def add_evidence_card(
     return {"kind": "evidence_card", "path": str(path)}
 
 
-def export_obsidian(workspace: Path, vault_folder: Path) -> dict[str, object]:
-    return export_obsidian_files(workspace, vault_folder)
+def export_obsidian(
+    workspace: Path,
+    vault_folder: Path,
+    mode: str = "learning_archive",
+) -> dict[str, object]:
+    return export_obsidian_files(workspace, vault_folder, mode)

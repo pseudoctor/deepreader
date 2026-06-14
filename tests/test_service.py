@@ -18,6 +18,7 @@ from deep_reading.service import (
     build_one_page_book_account,
     build_reading_guide,
     check_feynman_summary,
+    delete_learning_journal_item,
     explain_selection,
     export_obsidian,
     generate_active_recall,
@@ -32,6 +33,7 @@ from deep_reading.service import (
     save_evidence_table,
     save_one_page_book_account,
     synthesize_chapter_window,
+    update_learning_journal_item,
     update_reading_state,
 )
 
@@ -403,6 +405,30 @@ def test_build_learning_journal_aggregates_saved_learning_content(tmp_path: Path
     assert journal["groups"]["question"] == 1
     assert any("Why does this comparison matter?" in item["content"] for item in journal["items"])
     assert any(item["locator"] == "ch01: Intro" for item in journal["items"])
+    quote_item = next(item for item in journal["items"] if item["kind"] == "quote")
+    evidence_item = next(item for item in journal["items"] if item["kind"] == "evidence_card")
+    assert quote_item["target_text"] == "This is a short sample."
+    assert quote_item["editable"] is True
+    assert evidence_item["chapter_id"] == "ch01"
+    assert evidence_item["target_text"] == "Support"
+
+
+def test_update_and_delete_learning_journal_note_item(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    add_note(workspace, "ch01", "Confusions", "Why does this comparison matter?", "Question")
+    journal = build_learning_journal(workspace)
+    item = next(item for item in journal["items"] if item["kind"] == "question")
+
+    update_learning_journal_item(workspace, str(item["id"]), "Why does the timing matter?")
+    updated = build_learning_journal(workspace)
+    assert any("Why does the timing matter?" in item["content"] for item in updated["items"])
+    assert not any(
+        "Why does this comparison matter?" in item["content"] for item in updated["items"]
+    )
+
+    delete_learning_journal_item(workspace, str(item["id"]))
+    deleted = build_learning_journal(workspace)
+    assert deleted["groups"].get("question") is None
 
 
 def test_build_learning_journal_handles_empty_optional_files(tmp_path: Path) -> None:
@@ -673,10 +699,49 @@ def test_add_insight_review_and_evidence_cards_return_paths(tmp_path: Path) -> N
 def test_export_obsidian_returns_structured_result(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     vault_folder = tmp_path / "vault"
+    add_note(workspace, "ch01", "Confusions", "Why does this matter?", "Question")
+    add_note(workspace, "ch01", "Key Concepts", "This is a short sample.", "Quote")
+    add_evidence_card(workspace, "Claim", "ch01: Intro", "Support", "High")
 
     result = export_obsidian(workspace, vault_folder)
 
     assert result["vault_folder"] == str(vault_folder)
+    assert result["mode"] == "learning_archive"
     assert result["markdown_files_exported"] > 0
     assert Path(str(result["index_path"])).exists()
+    assert result["index_path"] == str(vault_folder / "Book Dashboard.md")
+    assert "Book Dashboard.md" in result["files"]
+    assert "Review Queue.md" in result["files"]
+    assert "Evidence Cards.md" in result["files"]
+    assert "Chapter Notes/ch01 Intro.md" in result["files"]
+    dashboard = (vault_folder / "Book Dashboard.md").read_text(encoding="utf-8")
+    assert "## 当前进度" in dashboard
+    assert "平均掌握度" in dashboard
+    chapter_note = (vault_folder / "Chapter Notes" / "ch01 Intro.md").read_text(
+        encoding="utf-8"
+    )
+    assert "## 关键摘录" in chapter_note
+    assert "This is a short sample." in chapter_note
+    assert "## 我的困惑" in chapter_note
+    assert "Why does this matter?" in chapter_note
+    assert "## 证据卡" in chapter_note
+    assert "Support" in chapter_note
+
+
+def test_export_obsidian_full_mode_preserves_workspace_mirror(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    vault_folder = tmp_path / "vault"
+
+    result = export_obsidian(workspace, vault_folder, "full")
+
+    assert result["mode"] == "full"
+    assert result["index_path"] == str(vault_folder / "index.md")
     assert "book_map.md" in result["files"]
+    assert (vault_folder / "chapter_notes" / "ch01-intro.md").exists()
+
+
+def test_export_obsidian_rejects_unknown_mode(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    with pytest.raises(ExtractionError, match="Unknown Obsidian export mode"):
+        export_obsidian(workspace, tmp_path / "vault", "unknown")

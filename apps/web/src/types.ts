@@ -78,10 +78,13 @@ export type ChapterText = {
 
 export type ObsidianExportResult = {
   vault_folder: string;
+  mode: "learning_archive" | "full";
   markdown_files_exported: number;
   index_path: string;
   files: string[];
 };
+
+export type ObsidianExportMode = "learning_archive" | "full";
 
 export type FeynmanCheckResult = {
   chapter_id: string;
@@ -174,6 +177,10 @@ export type LearningJournalItem = {
   locator: string;
   content: string;
   source_path: string;
+  target_text?: string;
+  editable?: boolean;
+  block_start?: number;
+  block_end?: number;
 };
 
 export type LearningJournalResult = {

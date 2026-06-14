@@ -1,6 +1,6 @@
-import React, { FormEvent, useEffect, useMemo, useState } from "react";
+import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { apiRequest } from "./api";
+import { apiRequest, deleteWorkspace, importWorkspaceSource } from "./api";
 import { formatChapterSynthesis, formatFeynmanFeedback } from "./formatters";
 import {
   languages,
@@ -36,6 +36,7 @@ import type {
   LearningLoop,
   MainView,
   NextAction,
+  ObsidianExportMode,
   ObsidianExportResult,
   OnePageBookAccountResult,
   ReadingFontSize,
@@ -109,10 +110,27 @@ function resolveSelectionOutputLanguage(
   return containsCjk(selectedText) || uiLanguage === "zh" ? "zh" : "en";
 }
 
+function resolveCurrentOutputLanguage(
+  selected: SelectionOutputLanguage,
+  uiLanguage: Language,
+): "zh" | "en" {
+  if (selected === "zh" || selected === "en") return selected;
+  return uiLanguage === "zh" ? "zh" : "en";
+}
+
 function formatActionLabel(t: (typeof translations)[Language], action: NextAction): string {
   const key = `action_${action.kind}` as keyof typeof t;
   const label = t[key];
   return typeof label === "string" ? label : action.kind;
+}
+
+function workspacePathForFile(fileName: string): string {
+  const stem = fileName.replace(/\.[^.]+$/, "") || "reading-workspace";
+  const slug = stem
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `workspaces/${slug || "reading-workspace"}-reading`;
 }
 
 function App() {
@@ -171,6 +189,8 @@ function App() {
   const [selectionToolbarPosition, setSelectionToolbarPosition] =
     useState<SelectionToolbarPosition | null>(null);
   const [obsidianFolder, setObsidianFolder] = useState(getInitialObsidianFolder);
+  const [obsidianExportMode, setObsidianExportMode] =
+    useState<ObsidianExportMode>("learning_archive");
   const [workspaceLibrary, setWorkspaceLibrary] =
     useState<WorkspaceLibraryItem[]>(getInitialWorkspaceLibrary);
   const [learningJournal, setLearningJournal] = useState<LearningJournalResult | null>(null);
@@ -179,6 +199,8 @@ function App() {
     chapter_id: "all",
   });
   const [selectedJournalItemId, setSelectedJournalItemId] = useState("");
+  const [editingJournalItemId, setEditingJournalItemId] = useState("");
+  const [journalEditText, setJournalEditText] = useState("");
   const [evidenceContextQuery, setEvidenceContextQuery] = useState("");
   const [evidenceContextResult, setEvidenceContextResult] =
     useState<EvidenceContextResult | null>(null);
@@ -197,10 +219,13 @@ function App() {
   const [weakConceptChapterId, setWeakConceptChapterId] = useState("");
   const [sourcePath, setSourcePath] = useState("");
   const [workspaceTarget, setWorkspaceTarget] = useState("");
+  const [autoWorkspaceTarget, setAutoWorkspaceTarget] = useState("");
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [importPanelOpen, setImportPanelOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const chapterTextRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     window.localStorage.setItem("deep-reading-language", language);
@@ -283,6 +308,21 @@ function App() {
     ].slice(0, 12));
   }
 
+  function resetLoadedWorkspace(deletedWorkspace: string) {
+    if (workspace !== deletedWorkspace) return;
+    setStatus(null);
+    setChapters([]);
+    setActiveChapter(null);
+    setLearningJournal(null);
+    setSelectedJournalItemId("");
+    setSynthesisResult(null);
+    setBookArgumentMap(null);
+    setOnePageBookAccount(null);
+    setEvidenceTable(null);
+    setConceptMap(null);
+    setEvidenceContextResult(null);
+  }
+
   function progressSummary(progress?: Record<string, number>): string {
     if (!progress) return t.noWorkspaceSummary;
     return Object.entries(progress)
@@ -331,6 +371,147 @@ function App() {
       learning: t.learningLoop,
     };
     return labels[mode];
+  }
+
+  function journalSearchText(item: LearningJournalItem): string {
+    if (item.target_text?.trim()) {
+      return item.target_text.trim();
+    }
+    const withoutMarkdown = item.content
+      .replace(/\*\*Locator\*\*[^\n]*/gi, "")
+      .replace(/\*\*Source Locator\*\*[^\n]*/gi, "")
+      .replace(/^#+\s*/gm, "")
+      .replace(/^>\s?/gm, "")
+      .trim();
+    const lines = withoutMarkdown
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => !/^\*\*[^*]+\*\*/.test(line));
+    return (lines.find((line) => line.length >= 8) ?? lines[0] ?? "").slice(0, 160);
+  }
+
+  function searchableTextWithOffsets(text: string): { normalized: string; offsets: number[] } {
+    const offsets: number[] = [];
+    let normalized = "";
+    for (let index = 0; index < text.length; index += 1) {
+      const char = text[index];
+      if (/\s/.test(char)) continue;
+      normalized += char.toLocaleLowerCase();
+      offsets.push(index);
+    }
+    return { normalized, offsets };
+  }
+
+  function queryCandidates(query: string): string[] {
+    const compact = query.replace(/\s+/g, " ").trim();
+    const candidates = [compact, compact.slice(0, 180), compact.slice(0, 120), compact.slice(0, 80), compact.slice(0, 40)]
+      .map((value) => value.trim())
+      .filter((value) => value.length >= 4);
+    return [...new Set(candidates)];
+  }
+
+  function scrollReaderToText(query: string) {
+    const root = chapterTextRef.current;
+    if (!root || !query.trim()) return;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    const candidates = queryCandidates(query);
+    while (node) {
+      const text = node.textContent ?? "";
+      const searchableText = searchableTextWithOffsets(text);
+      for (const candidate of candidates) {
+        const searchableQuery = searchableTextWithOffsets(candidate).normalized;
+        const index = searchableText.normalized.indexOf(searchableQuery);
+        if (index >= 0 && searchableQuery.length > 0) {
+          const start = searchableText.offsets[index];
+          const end = (searchableText.offsets[index + searchableQuery.length - 1] ?? start) + 1;
+          const range = document.createRange();
+          range.setStart(node, start);
+          range.setEnd(node, Math.min(end, text.length));
+          const selection = window.getSelection();
+          selection?.removeAllRanges();
+          selection?.addRange(range);
+          const rect = range.getBoundingClientRect();
+          const rootRect = root.getBoundingClientRect();
+          if (rect.height > 0) {
+            root.scrollTo({
+              top: root.scrollTop + rect.top - rootRect.top - root.clientHeight * 0.35,
+              behavior: "smooth",
+            });
+          } else if (node.parentElement) {
+            node.parentElement.scrollIntoView({ block: "center", behavior: "smooth" });
+          }
+          root.classList.add("reader-focus-highlight");
+          window.setTimeout(() => {
+            root.classList.remove("reader-focus-highlight");
+          }, 2400);
+          return;
+        }
+      }
+      node = walker.nextNode();
+    }
+  }
+
+  async function openJournalItemInReader(item: LearningJournalItem) {
+    if (!item.chapter_id) return;
+    setMainView("reader");
+    await loadChapter(item.chapter_id);
+    window.setTimeout(() => scrollReaderToText(journalSearchText(item)), 80);
+  }
+
+  function startEditingJournalItem(item: LearningJournalItem) {
+    setEditingJournalItemId(item.id);
+    setJournalEditText(item.content);
+  }
+
+  async function saveJournalItemEdit(item: LearningJournalItem) {
+    if (!workspace) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await apiRequest<{ status: string }>(`/learning-journal/item`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          workspace,
+          item_id: item.id,
+          content: journalEditText,
+        }),
+      });
+      setEditingJournalItemId("");
+      await loadLearningJournal();
+      setMessage(t.journalItemUpdated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedUpdateJournalItem);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteJournalItem(item: LearningJournalItem) {
+    if (!workspace) return;
+    if (!window.confirm(t.confirmDeleteJournalItem)) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await apiRequest<{ status: string }>(`/learning-journal/item`, {
+        method: "DELETE",
+        body: JSON.stringify({
+          workspace,
+          item_id: item.id,
+        }),
+      });
+      setSelectedJournalItemId("");
+      setEditingJournalItemId("");
+      await loadLearningJournal();
+      setMessage(t.journalItemDeleted);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedDeleteJournalItem);
+    } finally {
+      setBusy(false);
+    }
   }
 
   function selectMainView(nextView: MainView) {
@@ -592,6 +773,7 @@ function App() {
       const selectedTarget = await window.deepReadingDesktop.selectWorkspaceTargetFolder();
       if (!selectedTarget) return;
       setWorkspaceTarget(selectedTarget);
+      setAutoWorkspaceTarget("");
     } catch (err) {
       setError(err instanceof Error ? err.message : t.failedSelectWorkspaceTarget);
     } finally {
@@ -619,6 +801,59 @@ function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function importWorkspaceFromUpload(event: FormEvent) {
+    event.preventDefault();
+    if (!sourceFile) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await importWorkspaceSource(sourceFile, workspaceTarget);
+      setWorkspace(result.workspace);
+      await loadWorkspace(result.workspace);
+      setSourceFile(null);
+      setAutoWorkspaceTarget("");
+      setImportPanelOpen(false);
+      setMessage(t.workspaceCreated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedCreateWorkspace);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeWorkspaceFromLibrary(workspacePath: string) {
+    if (!window.confirm(t.confirmDeleteWorkspace)) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await deleteWorkspace(workspacePath);
+      setWorkspaceLibrary((current) => current.filter((item) => item.path !== workspacePath));
+      resetLoadedWorkspace(workspacePath);
+      setMessage(t.workspaceDeleted);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.failedDeleteWorkspace);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function chooseUploadSource(file: File | null) {
+    setSourceFile(file);
+    if (!file) {
+      setAutoWorkspaceTarget("");
+    } else {
+      const nextTarget = workspacePathForFile(file.name);
+      if (!workspaceTarget.trim() || workspaceTarget === autoWorkspaceTarget) {
+        setWorkspaceTarget(nextTarget);
+        setAutoWorkspaceTarget(nextTarget);
+      }
+    }
+    setError("");
+    setMessage("");
   }
 
   async function selectObsidianFolder() {
@@ -687,6 +922,7 @@ function App() {
 
   async function saveSelectedQuote() {
     if (!activeChapter || !selectedText.trim()) return;
+    const quoteText = selectedText.trim();
     setBusy(true);
     setError("");
     try {
@@ -695,10 +931,14 @@ function App() {
         body: JSON.stringify({
           workspace,
           chapter_id: activeChapter.id,
-          quote: selectedText.trim(),
+          quote: quoteText,
           locator: `${activeChapter.id}: ${activeChapter.title}`,
         }),
       });
+      setActiveCapture("note");
+      setNoteType("Quote");
+      setNoteSection("Key Concepts");
+      setNoteText(quoteText);
       setMessage(t.quoteSaved);
       setSelectedText("");
       setSelectionToolbarPosition(null);
@@ -961,6 +1201,7 @@ function App() {
         body: JSON.stringify({
           workspace,
           chapter_id: recallChapterId,
+          language: resolveCurrentOutputLanguage(selectionOutputLanguage, language),
         }),
       });
       setActiveRecallResult(result);
@@ -1004,6 +1245,7 @@ function App() {
           workspace,
           chapter_id: activeChapter.id,
           summary: feynmanSummary.trim(),
+          language: resolveCurrentOutputLanguage(selectionOutputLanguage, language),
         }),
       });
       setFeynmanResult(result);
@@ -1051,6 +1293,7 @@ function App() {
           workspace,
           start_chapter_id: synthesisStartChapterId,
           count: synthesisCount,
+          language: resolveCurrentOutputLanguage(selectionOutputLanguage, language),
         }),
       });
       setSynthesisResult(result);
@@ -1092,7 +1335,10 @@ function App() {
     try {
       const result = await apiRequest<BookArgumentMapResult>("/book-argument-map", {
         method: "POST",
-        body: JSON.stringify({ workspace }),
+        body: JSON.stringify({
+          workspace,
+          language: resolveCurrentOutputLanguage(selectionOutputLanguage, language),
+        }),
       });
       setBookArgumentMap(result);
       setMessage(t.bookMapReady);
@@ -1129,7 +1375,10 @@ function App() {
     try {
       const result = await apiRequest<OnePageBookAccountResult>("/one-page-book-account", {
         method: "POST",
-        body: JSON.stringify({ workspace }),
+        body: JSON.stringify({
+          workspace,
+          language: resolveCurrentOutputLanguage(selectionOutputLanguage, language),
+        }),
       });
       setOnePageBookAccount(result);
       setMessage(t.onePageAccountReady);
@@ -1166,7 +1415,10 @@ function App() {
     try {
       const result = await apiRequest<EvidenceTableResult>("/evidence-table", {
         method: "POST",
-        body: JSON.stringify({ workspace }),
+        body: JSON.stringify({
+          workspace,
+          language: resolveCurrentOutputLanguage(selectionOutputLanguage, language),
+        }),
       });
       setEvidenceTable(result);
       setMessage(t.evidenceTableReady);
@@ -1203,7 +1455,10 @@ function App() {
     try {
       const result = await apiRequest<ConceptMapResult>("/concept-map", {
         method: "POST",
-        body: JSON.stringify({ workspace }),
+        body: JSON.stringify({
+          workspace,
+          language: resolveCurrentOutputLanguage(selectionOutputLanguage, language),
+        }),
       });
       setConceptMap(result);
       setMessage(t.conceptMapReady);
@@ -1277,6 +1532,7 @@ function App() {
         body: JSON.stringify({
           workspace,
           vault_folder: obsidianFolder.trim(),
+          mode: obsidianExportMode,
         }),
       });
       setMessage(
@@ -1298,7 +1554,6 @@ function App() {
           <span className="brand-mark">DR</span>
           <div>
             <h1>{t.appTitle}</h1>
-            <p>{t.appSubtitle}</p>
           </div>
         </div>
         <p className="top-nav-workspace" title={status?.workspace ?? workspace}>
@@ -1421,7 +1676,10 @@ function App() {
                 <input
                   id="workspace-target"
                   value={workspaceTarget}
-                  onChange={(event) => setWorkspaceTarget(event.target.value)}
+                  onChange={(event) => {
+                    setWorkspaceTarget(event.target.value);
+                    setAutoWorkspaceTarget("");
+                  }}
                   placeholder={t.workspaceTargetPlaceholder}
                   spellCheck={false}
                 />
@@ -1443,7 +1701,41 @@ function App() {
             </form>
           )}
           {importPanelOpen && !window.deepReadingDesktop && (
-            <p className="muted">{t.importBookDesktopOnly}</p>
+            <form className="create-workspace-form" onSubmit={importWorkspaceFromUpload}>
+              <label htmlFor="source-upload">{t.sourcePath}</label>
+              <input
+                id="source-upload"
+                accept=".pdf,.epub,.docx,.txt,.text,.md,.markdown,.html,.htm,.rtf"
+                type="file"
+                onChange={(event) => chooseUploadSource(event.target.files?.[0] ?? null)}
+              />
+              <p className="muted">{t.supportedSourceFormats}</p>
+              {sourceFile && (
+                <p className="muted">
+                  {t.selectedSource}: {sourceFile.name}
+                </p>
+              )}
+
+              <label htmlFor="web-workspace-target">{t.workspaceTargetOptional}</label>
+              <input
+                id="web-workspace-target"
+                value={workspaceTarget}
+                onChange={(event) => {
+                  setWorkspaceTarget(event.target.value);
+                  setAutoWorkspaceTarget("");
+                }}
+                placeholder={t.webWorkspaceTargetPlaceholder}
+                spellCheck={false}
+              />
+
+              <button type="submit" disabled={busy || !sourceFile}>
+                {busy ? t.initializingBook : t.initializeBook}
+              </button>
+              <div className="message-stack" aria-live="polite">
+                {message && <p className="success">{message}</p>}
+                {error && <p className="error">{error}</p>}
+              </div>
+            </form>
           )}
         </section>
 
@@ -1454,31 +1746,42 @@ function App() {
           ) : (
             <div className="recent-workspace-list">
               {workspaceLibrary.map((item) => (
-                <button
-                  key={item.path}
-                  onClick={() => {
-                    setWorkspace(item.path);
-                    void loadWorkspace(item.path);
-                  }}
-                  type="button"
-                  disabled={busy}
-                  title={item.path}
-                >
-                  <strong>{item.title ?? workspaceTitle(item.path)}</strong>
-                  <span>{progressSummary(item.progress)}</span>
-                  <span>
-                    {t.lastOpened}: {formatOpenedAt(item.last_opened_at)}
-                  </span>
-                  {typeof item.average_mastery === "number" && (
+                <article className="recent-workspace-card" key={item.path} title={item.path}>
+                  <button
+                    className="recent-workspace-main"
+                    onClick={() => {
+                      setWorkspace(item.path);
+                      void loadWorkspace(item.path);
+                    }}
+                    type="button"
+                    disabled={busy}
+                  >
+                    <strong>{item.title ?? workspaceTitle(item.path)}</strong>
+                    <span>{progressSummary(item.progress)}</span>
                     <span>
-                      {t.averageMastery} {item.average_mastery}% · {t.reviewReady}{" "}
-                      {item.review_ready_count ?? 0} · {t.weakChapters} {item.weak_count ?? 0}
+                      {t.lastOpened}: {formatOpenedAt(item.last_opened_at)}
                     </span>
-                  )}
-                  {item.next_action && (
-                    <em>{formatActionLabel(t, item.next_action)}</em>
-                  )}
-                </button>
+                    {typeof item.average_mastery === "number" && (
+                      <span>
+                        {t.averageMastery} {item.average_mastery}% · {t.reviewReady}{" "}
+                        {item.review_ready_count ?? 0} · {t.weakChapters} {item.weak_count ?? 0}
+                      </span>
+                    )}
+                    {item.next_action && (
+                      <em>{formatActionLabel(t, item.next_action)}</em>
+                    )}
+                  </button>
+                  <button
+                    className="workspace-delete-button"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void removeWorkspaceFromLibrary(item.path)}
+                    aria-label={`${t.deleteWorkspace}: ${item.title ?? workspaceTitle(item.path)}`}
+                    title={t.deleteWorkspace}
+                  >
+                    ×
+                  </button>
+                </article>
               ))}
             </div>
           )}
@@ -1486,6 +1789,15 @@ function App() {
 
         <form className="export-form" onSubmit={exportToObsidian}>
           <span className="eyebrow">{t.export}</span>
+          <label htmlFor="obsidian-export-mode">{t.obsidianExportMode}</label>
+          <select
+            id="obsidian-export-mode"
+            value={obsidianExportMode}
+            onChange={(event) => setObsidianExportMode(event.target.value as ObsidianExportMode)}
+          >
+            <option value="learning_archive">{t.obsidianLearningArchiveMode}</option>
+            <option value="full">{t.obsidianFullMode}</option>
+          </select>
           <label htmlFor="obsidian-folder">{t.obsidianFolder}</label>
           <input
             id="obsidian-folder"
@@ -1673,6 +1985,7 @@ function App() {
         )}
 
         <article
+          ref={chapterTextRef}
           className={`chapter-text chapter-text-${readingFontSize}`}
           onMouseUp={handleTextSelection}
           onKeyUp={handleTextSelection}
@@ -2540,7 +2853,10 @@ function App() {
                   key={item.id}
                   className={selectedJournalItem?.id === item.id ? "journal-item active" : "journal-item"}
                   type="button"
-                  onClick={() => setSelectedJournalItemId(item.id)}
+                  onClick={() => {
+                    setSelectedJournalItemId(item.id);
+                    setEditingJournalItemId("");
+                  }}
                 >
                   <span>{journalKindLabel(item.kind)}</span>
                   <strong>{item.title}</strong>
@@ -2572,21 +2888,66 @@ function App() {
                     <dd>{selectedJournalItem.source_path}</dd>
                   </div>
                 </dl>
-                <article className="journal-detail-content">
-                  {selectedJournalItem.content}
-                </article>
-                {selectedJournalItem.chapter_id && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMainView("reader");
-                      void loadChapter(selectedJournalItem.chapter_id ?? "");
-                    }}
-                    disabled={busy}
-                  >
-                    {t.openInReader}
-                  </button>
+                {editingJournalItemId === selectedJournalItem.id ? (
+                  <div className="journal-edit-form">
+                    <textarea
+                      value={journalEditText}
+                      onChange={(event) => setJournalEditText(event.target.value)}
+                    />
+                    <div className="inline-actions">
+                      <button
+                        type="button"
+                        onClick={() => void saveJournalItemEdit(selectedJournalItem)}
+                        disabled={busy}
+                      >
+                        {t.saveChanges}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => setEditingJournalItemId("")}
+                        disabled={busy}
+                      >
+                        {t.cancel}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <article className="journal-detail-content">
+                    {selectedJournalItem.content}
+                  </article>
                 )}
+                <div className="inline-actions">
+                  {selectedJournalItem.chapter_id && (
+                    <button
+                      type="button"
+                      onClick={() => void openJournalItemInReader(selectedJournalItem)}
+                      disabled={busy}
+                    >
+                      {t.openInReader}
+                    </button>
+                  )}
+                  {selectedJournalItem.editable && editingJournalItemId !== selectedJournalItem.id && (
+                    <>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => startEditingJournalItem(selectedJournalItem)}
+                        disabled={busy}
+                      >
+                        {t.edit}
+                      </button>
+                      <button
+                        type="button"
+                        className="danger-button"
+                        onClick={() => void deleteJournalItem(selectedJournalItem)}
+                        disabled={busy}
+                      >
+                        {t.delete}
+                      </button>
+                    </>
+                  )}
+                </div>
               </>
             ) : (
               <p className="muted">{t.journalEmpty}</p>

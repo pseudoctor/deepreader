@@ -26,3 +26,37 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   }
   return data as T;
 }
+
+export async function importWorkspaceSource(
+  file: File,
+  workspacePath: string,
+): Promise<{ workspace: string }> {
+  const apiBaseUrl = window.deepReadingDesktop?.apiBaseUrl ?? "/api";
+  const query = new URLSearchParams({ filename: file.name });
+  if (workspacePath.trim()) {
+    query.set("workspace", workspacePath.trim());
+  }
+  const response = await fetch(`${apiBaseUrl}/workspaces/import?${query.toString()}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: await file.arrayBuffer(),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || `Request failed: ${response.status}`);
+  }
+  return data as { workspace: string };
+}
+
+export async function deleteWorkspace(workspacePath: string): Promise<{ deleted: string }> {
+  const apiBaseUrl = window.deepReadingDesktop?.apiBaseUrl ?? "/api";
+  const query = new URLSearchParams({ workspace: workspacePath });
+  const response = await fetch(`${apiBaseUrl}/workspaces?${query.toString()}`, {
+    method: "DELETE",
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || `Request failed: ${response.status}`);
+  }
+  return data as { deleted: string };
+}

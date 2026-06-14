@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from .chapters import slugify
 from .errors import ExtractionError
 from .llm import (
     list_provider_models,
@@ -30,6 +32,7 @@ from .service import (
     build_learning_journal,
     build_one_page_book_account,
     check_feynman_summary,
+    delete_learning_journal_item,
     explain_selection,
     export_obsidian,
     generate_active_recall,
@@ -44,8 +47,10 @@ from .service import (
     save_evidence_table,
     save_one_page_book_account,
     synthesize_chapter_window,
+    update_learning_journal_item,
     update_reading_state,
 )
+from .workspace import build_workspace
 
 WorkspaceQuery = Annotated[Path, Query()]
 ChapterIdQuery = Annotated[str, Query()]
@@ -54,7 +59,7 @@ ChapterIdQuery = Annotated[str, Query()]
 app = FastAPI(title="Deep Reading API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5173", "null"],
+    allow_origins=["http://127.0.0.1:5173", "http://127.0.0.1:5174", "null"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -84,10 +89,22 @@ class QuoteRequest(BaseModel):
     locator: str
 
 
+class LearningJournalUpdateRequest(BaseModel):
+    workspace: Path
+    item_id: str
+    content: str
+
+
+class LearningJournalDeleteRequest(BaseModel):
+    workspace: Path
+    item_id: str
+
+
 class FeynmanCheckRequest(BaseModel):
     workspace: Path
     chapter_id: str
     summary: str
+    language: str | None = None
 
 
 class SelectionActionRequest(BaseModel):
@@ -101,10 +118,12 @@ class ChapterSynthesisRequest(BaseModel):
     workspace: Path
     start_chapter_id: str
     count: int = Field(default=3, ge=1, le=10)
+    language: str | None = None
 
 
 class BookArgumentMapRequest(BaseModel):
     workspace: Path
+    language: str | None = None
 
 
 class SaveBookArgumentMapRequest(BaseModel):
@@ -130,6 +149,7 @@ class SaveConceptMapRequest(BaseModel):
 class ActiveRecallRequest(BaseModel):
     workspace: Path
     chapter_id: str
+    language: str | None = None
 
 
 class SaveActiveRecallRequest(BaseModel):
@@ -175,6 +195,7 @@ class WeakConceptRequest(BaseModel):
 class ObsidianExportRequest(BaseModel):
     workspace: Path
     vault_folder: Path
+    mode: str = "learning_archive"
 
 
 class LLMProviderRequest(BaseModel):
@@ -188,6 +209,34 @@ class LLMSettingsRequest(BaseModel):
     api_key: str | None = None
 
 
+def upload_workspace_for(filename: str, workspace: Path | None) -> Path:
+    if workspace is not None:
+        return workspace
+    stem = Path(filename).stem or "reading-workspace"
+    return Path("workspaces") / f"{slugify(stem)}-reading"
+
+
+def safe_upload_filename(filename: str) -> str:
+    name = Path(filename).name
+    return name or "source.txt"
+
+
+def resolve_deletable_workspace(workspace: Path) -> Path:
+    root = Path("workspaces").resolve()
+    target = workspace.resolve()
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise ExtractionError("Only workspaces under ./workspaces can be deleted") from exc
+    if not target.exists():
+        raise ExtractionError(f"Workspace does not exist: {workspace}")
+    if not target.is_dir():
+        raise ExtractionError(f"Workspace is not a directory: {workspace}")
+    if not (target / "metadata.json").exists():
+        raise ExtractionError(f"Not an initialized workspace: {workspace}")
+    return target
+
+
 @app.exception_handler(ExtractionError)
 async def extraction_error_handler(request, exc: ExtractionError) -> JSONResponse:  # noqa: ANN001
     return JSONResponse(status_code=400, content={"error": str(exc)})
@@ -196,6 +245,32 @@ async def extraction_error_handler(request, exc: ExtractionError) -> JSONRespons
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.delete("/workspaces")
+def delete_workspace(workspace: WorkspaceQuery) -> dict[str, str]:
+    target = resolve_deletable_workspace(workspace)
+    shutil.rmtree(target)
+    return {"deleted": str(workspace)}
+
+
+@app.post("/workspaces/import")
+async def import_workspace(
+    request: Request,
+    filename: Annotated[str, Query(min_length=1)],
+    workspace: Annotated[Path | None, Query()] = None,
+) -> dict[str, str]:
+    content = await request.body()
+    if not content:
+        raise ExtractionError("Uploaded source is empty")
+    target_workspace = upload_workspace_for(filename, workspace)
+    if (target_workspace / "metadata.json").exists():
+        raise ExtractionError(f"Workspace already exists: {target_workspace}")
+    source_file = target_workspace / "source_files" / safe_upload_filename(filename)
+    source_file.parent.mkdir(parents=True, exist_ok=True)
+    source_file.write_bytes(content)
+    build_workspace(str(source_file), target_workspace)
+    return {"workspace": str(target_workspace)}
 
 
 @app.get("/llm/providers")
@@ -253,6 +328,18 @@ def learning_journal(workspace: WorkspaceQuery) -> dict[str, object]:
     return build_learning_journal(workspace)
 
 
+@app.patch("/learning-journal/item")
+def learning_journal_update(request: LearningJournalUpdateRequest) -> dict[str, object]:
+    return update_learning_journal_item(request.workspace, request.item_id, request.content)
+
+
+@app.api_route("/learning-journal/item", methods=["DELETE"])
+async def learning_journal_delete(request: Request) -> dict[str, object]:
+    payload = await request.json()
+    parsed = LearningJournalDeleteRequest.model_validate(payload)
+    return delete_learning_journal_item(parsed.workspace, parsed.item_id)
+
+
 @app.get("/chapters")
 def chapters(workspace: WorkspaceQuery) -> dict[str, object]:
     return {"chapters": list_chapters(workspace)}
@@ -289,7 +376,12 @@ def quotes(request: QuoteRequest) -> dict[str, str]:
 
 @app.post("/feynman-check")
 def feynman_check(request: FeynmanCheckRequest) -> dict[str, object]:
-    return check_feynman_summary(request.workspace, request.chapter_id, request.summary)
+    return check_feynman_summary(
+        request.workspace,
+        request.chapter_id,
+        request.summary,
+        request.language,
+    )
 
 
 @app.post("/selection-explanation")
@@ -318,12 +410,13 @@ def chapter_synthesis(request: ChapterSynthesisRequest) -> dict[str, object]:
         request.workspace,
         request.start_chapter_id,
         request.count,
+        request.language,
     )
 
 
 @app.post("/book-argument-map")
 def book_argument_map(request: BookArgumentMapRequest) -> dict[str, object]:
-    return build_book_argument_map(request.workspace)
+    return build_book_argument_map(request.workspace, request.language)
 
 
 @app.post("/book-argument-map/save")
@@ -333,7 +426,7 @@ def save_argument_map(request: SaveBookArgumentMapRequest) -> dict[str, str]:
 
 @app.post("/one-page-book-account")
 def one_page_book_account(request: BookArgumentMapRequest) -> dict[str, object]:
-    return build_one_page_book_account(request.workspace)
+    return build_one_page_book_account(request.workspace, request.language)
 
 
 @app.post("/one-page-book-account/save")
@@ -343,7 +436,7 @@ def save_book_account(request: SaveOnePageBookAccountRequest) -> dict[str, str]:
 
 @app.post("/active-recall")
 def active_recall(request: ActiveRecallRequest) -> dict[str, object]:
-    return generate_active_recall(request.workspace, request.chapter_id)
+    return generate_active_recall(request.workspace, request.chapter_id, request.language)
 
 
 @app.post("/active-recall/save")
@@ -386,7 +479,7 @@ def save_context(request: SaveEvidenceContextRequest) -> dict[str, str]:
 
 @app.post("/evidence-table")
 def evidence_table(request: BookArgumentMapRequest) -> dict[str, object]:
-    return build_evidence_table(request.workspace)
+    return build_evidence_table(request.workspace, request.language)
 
 
 @app.post("/evidence-table/save")
@@ -396,7 +489,7 @@ def save_table(request: SaveEvidenceTableRequest) -> dict[str, str]:
 
 @app.post("/concept-map")
 def concept_map(request: BookArgumentMapRequest) -> dict[str, object]:
-    return build_concept_map(request.workspace)
+    return build_concept_map(request.workspace, request.language)
 
 
 @app.post("/concept-map/save")
@@ -416,4 +509,4 @@ def weak_concepts(request: WeakConceptRequest) -> dict[str, object]:
 
 @app.post("/obsidian-export")
 def obsidian_export(request: ObsidianExportRequest) -> dict[str, object]:
-    return export_obsidian(request.workspace, request.vault_folder)
+    return export_obsidian(request.workspace, request.vault_folder, request.mode)

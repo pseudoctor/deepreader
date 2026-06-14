@@ -50,6 +50,11 @@ def build_workspace(source: str, workspace: Path, note_language: str = "auto") -
             errors.append({"file": str(path), "error": str(exc)})
 
     if not extracted:
+        details = "; ".join(
+            f"{Path(str(item['file'])).name}: {item['error']}" for item in errors
+        )
+        if details:
+            raise ExtractionError(f"All sources failed extraction. {details}")
         raise ExtractionError("All sources failed extraction.")
 
     combined_parts = []

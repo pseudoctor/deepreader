@@ -1,7 +1,10 @@
 import json
 from pathlib import Path
 
+import pytest
 from deep_reading.cli import main
+from deep_reading.errors import ExtractionError
+from deep_reading.workspace import build_workspace
 
 
 def make_sample_source(tmp_path: Path) -> Path:
@@ -52,6 +55,14 @@ def test_init_saves_user_selected_note_language(tmp_path: Path) -> None:
     assert metadata["note_language"] == "zh"
     assert library["note_language"] == "zh"
     assert "> Note Language: zh" in chapter_note
+
+
+def test_build_workspace_reports_source_extraction_details(tmp_path: Path) -> None:
+    source = tmp_path / "book.azw3"
+    source.write_text("unsupported", encoding="utf-8")
+
+    with pytest.raises(ExtractionError, match="Unsupported file type: book.azw3"):
+        build_workspace(str(source), tmp_path / "workspace")
 
 
 def test_mark_updates_reading_state(tmp_path: Path) -> None:

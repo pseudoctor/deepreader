@@ -30,6 +30,74 @@ def test_health_endpoint() -> None:
     assert response.json() == {"status": "ok"}
 
 
+def test_import_workspace_endpoint_creates_workspace_from_upload(tmp_path: Path) -> None:
+    client = TestClient(app)
+    workspace = tmp_path / "uploaded-reading"
+
+    response = client.post(
+        "/workspaces/import",
+        params={"filename": "uploaded.md", "workspace": str(workspace)},
+        content=b"# Uploaded Chapter\n\nA short uploaded book.",
+        headers={"Content-Type": "application/octet-stream"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["workspace"] == str(workspace)
+    assert (workspace / "metadata.json").exists()
+    assert (workspace / "source_files" / "uploaded.md").exists()
+
+
+def test_import_workspace_endpoint_rejects_empty_upload(tmp_path: Path) -> None:
+    client = TestClient(app)
+
+    response = client.post(
+        "/workspaces/import",
+        params={"filename": "empty.md", "workspace": str(tmp_path / "empty-reading")},
+        content=b"",
+        headers={"Content-Type": "application/octet-stream"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "Uploaded source is empty"
+
+
+def test_delete_workspace_endpoint_removes_initialized_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    client = TestClient(app)
+    workspace = tmp_path / "workspaces" / "delete-me"
+
+    response = client.post(
+        "/workspaces/import",
+        params={"filename": "uploaded.md", "workspace": str(Path("workspaces/delete-me"))},
+        content=b"# Uploaded Chapter\n\nA short uploaded book.",
+        headers={"Content-Type": "application/octet-stream"},
+    )
+    assert response.status_code == 200
+
+    delete_response = client.delete(
+        "/workspaces",
+        params={"workspace": str(Path("workspaces/delete-me"))},
+    )
+
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {"deleted": "workspaces/delete-me"}
+    assert not workspace.exists()
+
+
+def test_delete_workspace_endpoint_rejects_paths_outside_workspaces(tmp_path: Path) -> None:
+    client = TestClient(app)
+    workspace = make_workspace(tmp_path)
+
+    response = client.delete("/workspaces", params={"workspace": str(workspace)})
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "Only workspaces under ./workspaces can be deleted"
+    assert workspace.exists()
+
+
 def test_llm_providers_endpoint_returns_reserved_provider_status() -> None:
     client = TestClient(app)
 
@@ -256,6 +324,46 @@ def test_learning_journal_endpoint_returns_saved_items(tmp_path: Path) -> None:
     assert data["workspace"] == str(workspace)
     assert data["groups"]["question"] == 1
     assert data["items"][0]["kind"] == "question"
+    assert data["items"][0]["editable"] is True
+
+
+def test_learning_journal_item_update_and_delete_endpoints(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+    client.post(
+        "/notes",
+        json={
+            "workspace": str(workspace),
+            "chapter_id": "ch01",
+            "section": "Confusions",
+            "note_type": "Question",
+            "text": "Why does this pattern matter?",
+        },
+    )
+    item = client.get("/learning-journal", params={"workspace": str(workspace)}).json()["items"][0]
+
+    update_response = client.patch(
+        "/learning-journal/item",
+        json={
+            "workspace": str(workspace),
+            "item_id": item["id"],
+            "content": "Why does this timing matter?",
+        },
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["status"] == "updated"
+    updated = client.get("/learning-journal", params={"workspace": str(workspace)}).json()
+    assert "Why does this timing matter?" in updated["items"][0]["content"]
+
+    delete_response = client.request(
+        "DELETE",
+        "/learning-journal/item",
+        json={"workspace": str(workspace), "item_id": item["id"]},
+    )
+    assert delete_response.status_code == 200
+    assert delete_response.json()["status"] == "deleted"
+    deleted = client.get("/learning-journal", params={"workspace": str(workspace)}).json()
+    assert deleted["groups"].get("question") is None
 
 
 def test_learning_journal_endpoint_rejects_missing_workspace(tmp_path: Path) -> None:
@@ -406,6 +514,27 @@ def test_feynman_check_endpoint_returns_structured_feedback(tmp_path: Path) -> N
     assert "causal mechanism" in data["rewritten_version"]
 
 
+def test_feynman_check_endpoint_accepts_chinese_output_language(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/feynman-check",
+        json={
+            "workspace": str(workspace),
+            "chapter_id": "ch01",
+            "summary": "The chapter says many important things.",
+            "language": "zh",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "因果链" in data["missing_causal_links"][0]
+    assert "具体例子" in data["unsupported_leaps"][0]
+    assert "为了让解释更有力" in data["rewritten_version"]
+
+
 def test_selection_explanation_endpoint_returns_note_draft(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     client = TestClient(app)
@@ -484,6 +613,26 @@ def test_chapter_synthesis_endpoint_returns_cross_chapter_prompts(tmp_path: Path
     assert [chapter["id"] for chapter in data["chapters"]] == ["ch01", "ch02"]
     assert data["recurring_concepts"]
     assert data["open_questions"]
+
+
+def test_chapter_synthesis_endpoint_accepts_chinese_output_language(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/chapter-synthesis",
+        json={
+            "workspace": str(workspace),
+            "start_chapter_id": "ch01",
+            "count": 2,
+            "language": "zh",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "共同澄清" in data["common_question"]
+    assert "反复出现" in data["recurring_concepts"][0]
 
 
 def test_book_argument_map_endpoint_returns_whole_book_structure(tmp_path: Path) -> None:
@@ -574,6 +723,21 @@ def test_active_recall_endpoint_returns_chapter_questions(tmp_path: Path) -> Non
     assert data["chapter_id"] == "ch01"
     assert len(data["questions"]) == 3
     assert data["eligible_for_review"] is False
+
+
+def test_active_recall_endpoint_accepts_chinese_output_language(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/active-recall",
+        json={"workspace": str(workspace), "chapter_id": "ch01", "language": "zh"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "具体证据" in data["questions"][0]["answer_hint"]
+    assert "整本书的大论证" in data["questions"][2]["question"]
 
 
 def test_save_active_recall_endpoint_appends_review_cards(tmp_path: Path) -> None:
@@ -808,7 +972,7 @@ def test_save_evidence_context_endpoint_writes_markdown(tmp_path: Path) -> None:
     assert "**Query** short sample" in content
 
 
-def test_obsidian_export_endpoint_exports_workspace_markdown(tmp_path: Path) -> None:
+def test_obsidian_export_endpoint_exports_learning_archive_by_default(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     vault_folder = tmp_path / "vault" / "reading"
     client = TestClient(app)
@@ -821,7 +985,43 @@ def test_obsidian_export_endpoint_exports_workspace_markdown(tmp_path: Path) -> 
     assert response.status_code == 200
     data = response.json()
     assert data["vault_folder"] == str(vault_folder)
+    assert data["mode"] == "learning_archive"
     assert data["markdown_files_exported"] > 0
+    assert data["index_path"] == str(vault_folder / "Book Dashboard.md")
+    assert (vault_folder / "Book Dashboard.md").exists()
+    assert (vault_folder / "Review Queue.md").exists()
+    assert (vault_folder / "Evidence Cards.md").exists()
+
+
+def test_obsidian_export_endpoint_accepts_full_mode(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    vault_folder = tmp_path / "vault" / "reading"
+    client = TestClient(app)
+
+    response = client.post(
+        "/obsidian-export",
+        json={"workspace": str(workspace), "vault_folder": str(vault_folder), "mode": "full"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["mode"] == "full"
     assert data["index_path"] == str(vault_folder / "index.md")
     assert (vault_folder / "index.md").exists()
-    assert (vault_folder / "reading-plan.md").exists()
+
+
+def test_obsidian_export_endpoint_rejects_unknown_mode(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/obsidian-export",
+        json={
+            "workspace": str(workspace),
+            "vault_folder": str(tmp_path / "vault"),
+            "mode": "unknown",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Unknown Obsidian export mode" in response.json()["error"]
