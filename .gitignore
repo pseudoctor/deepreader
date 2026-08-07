@@ -9,6 +9,7 @@ workspaces/
 node_modules/
 apps/web/dist/
 apps/desktop/dist/
+apps/desktop/.runtime/
 apps/desktop/release/
 apps/desktop/node_modules/
 *.tsbuildinfo

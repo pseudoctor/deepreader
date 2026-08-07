@@ -1,5 +1,6 @@
 type DeepReadingDesktopApi = {
   apiBaseUrl: string;
+  apiToken: string;
   platform: string;
   selectWorkspaceFolder: () => Promise<string | null>;
   selectSourcePath: () => Promise<string | null>;
@@ -16,9 +17,17 @@ declare global {
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const apiBaseUrl = window.deepReadingDesktop?.apiBaseUrl ?? "/api";
+  const apiToken = window.deepReadingDesktop?.apiToken;
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (apiToken) {
+    headers.set("X-Deep-Reading-API-Token", apiToken);
+  }
   const response = await fetch(`${apiBaseUrl}${path}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
     ...init,
+    headers,
   });
   const data = await response.json();
   if (!response.ok) {
@@ -32,13 +41,17 @@ export async function importWorkspaceSource(
   workspacePath: string,
 ): Promise<{ workspace: string }> {
   const apiBaseUrl = window.deepReadingDesktop?.apiBaseUrl ?? "/api";
+  const apiToken = window.deepReadingDesktop?.apiToken;
   const query = new URLSearchParams({ filename: file.name });
   if (workspacePath.trim()) {
     query.set("workspace", workspacePath.trim());
   }
   const response = await fetch(`${apiBaseUrl}/workspaces/import?${query.toString()}`, {
     method: "POST",
-    headers: { "Content-Type": "application/octet-stream" },
+    headers: {
+      "Content-Type": "application/octet-stream",
+      ...(apiToken ? { "X-Deep-Reading-API-Token": apiToken } : {}),
+    },
     body: await file.arrayBuffer(),
   });
   const data = await response.json();
@@ -50,9 +63,11 @@ export async function importWorkspaceSource(
 
 export async function deleteWorkspace(workspacePath: string): Promise<{ deleted: string }> {
   const apiBaseUrl = window.deepReadingDesktop?.apiBaseUrl ?? "/api";
+  const apiToken = window.deepReadingDesktop?.apiToken;
   const query = new URLSearchParams({ workspace: workspacePath });
   const response = await fetch(`${apiBaseUrl}/workspaces?${query.toString()}`, {
     method: "DELETE",
+    headers: apiToken ? { "X-Deep-Reading-API-Token": apiToken } : undefined,
   });
   const data = await response.json();
   if (!response.ok) {

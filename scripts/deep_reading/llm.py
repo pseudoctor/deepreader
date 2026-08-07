@@ -236,7 +236,10 @@ def load_llm_settings() -> dict[str, object]:
     path = settings_path()
     if not path.exists():
         return {"selected": None, "providers": {}}
-    data = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"selected": None, "providers": {}}
     if not isinstance(data, dict):
         return {"selected": None, "providers": {}}
     providers = data.get("providers", {})
@@ -250,6 +253,8 @@ def save_llm_settings(data: dict[str, object]) -> None:
     path = settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    if os.name != "nt":
+        path.chmod(0o600)
 
 
 def provider_runtime_settings(spec: LLMProviderSpec) -> dict[str, str]:
@@ -397,6 +402,11 @@ def provider_base_url(spec: LLMProviderSpec) -> str:
     value = runtime.get("base_url") or env_value(spec.base_url_env) or spec.default_base_url
     if value is None:
         raise RuntimeError(f"{spec.display_name} provider has no base URL configured.")
+    parsed = parse.urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise RuntimeError("LLM base URL must be a valid HTTP(S) URL.")
+    if parsed.username or parsed.password:
+        raise RuntimeError("LLM base URL must not contain embedded credentials.")
     return value.rstrip("/")
 
 
@@ -522,9 +532,8 @@ def remote_model_list(spec: LLMProviderSpec) -> list[dict[str, str]]:
                 f"{spec.display_name} provider requires {spec.api_key_env} to refresh models."
             )
         data = read_json_url(
-            "https://generativelanguage.googleapis.com/v1beta/models"
-            f"?key={parse.quote(api_key)}",
-            {"Content-Type": "application/json"},
+            "https://generativelanguage.googleapis.com/v1beta/models",
+            {"Content-Type": "application/json", "x-goog-api-key": api_key},
         )
         models = normalize_model_items(data.get("models"), "baseModelId")
         return pick_preferred_models(spec, models)
@@ -1001,6 +1010,7 @@ class OpenAIProvider(LLMProvider):
                 f"Chapter id: {chapter['id']}\n"
                 f"Chapter title: {chapter['title']}\n\n"
                 f"{language_instruction}\n\n"
+                f"{self.grounded_context_prompt(chapter)}\n\n"
                 "Check this Feynman-style summary for accuracy, vagueness, missing causal "
                 "links, unsupported leaps, and then rewrite it more clearly.\n\n"
                 f"Summary:\n{stripped}"
@@ -1029,6 +1039,7 @@ class OpenAIProvider(LLMProvider):
                 f"Chapter id: {chapter['id']}\n"
                 f"Chapter title: {chapter['title']}\n\n"
                 f"{language_instruction}\n\n"
+                f"{self.grounded_context_prompt(chapter)}\n\n"
                 "Explain the selected passage for a deep-reading learner. Focus on claim, "
                 "evidence, causal link, and how to read it.\n\n"
                 f"Selected passage:\n{text}"
@@ -1057,6 +1068,7 @@ class OpenAIProvider(LLMProvider):
                 f"Chapter id: {chapter['id']}\n"
                 f"Chapter title: {chapter['title']}\n\n"
                 f"{language_instruction}\n\n"
+                f"{self.grounded_context_prompt(chapter)}\n\n"
                 "Generate one review question and one concise answer for this selected passage. "
                 "The question should test the passage's claim, evidence, or causal link.\n\n"
                 f"Selected passage:\n{text}"

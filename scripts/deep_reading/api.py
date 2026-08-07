@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 from typing import Annotated
@@ -50,7 +51,8 @@ from .service import (
     update_learning_journal_item,
     update_reading_state,
 )
-from .workspace import build_workspace
+from .sources import SUPPORTED_EXTENSIONS
+from .workspace import build_workspace, validate_workspace_target
 
 WorkspaceQuery = Annotated[Path, Query()]
 ChapterIdQuery = Annotated[str, Query()]
@@ -63,6 +65,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+API_TOKEN_ENV = "DEEP_READING_API_TOKEN"
+API_TOKEN_HEADER = "X-Deep-Reading-API-Token"
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+
+
+@app.middleware("http")
+async def require_local_api_token(request: Request, call_next):  # noqa: ANN001
+    expected = os.environ.get(API_TOKEN_ENV, "").strip()
+    if (
+        not expected
+        or request.method == "OPTIONS"
+        or request.url.path == "/health"
+    ):
+        return await call_next(request)
+    if request.headers.get(API_TOKEN_HEADER) != expected:
+        return JSONResponse(status_code=401, content={"error": "Unauthorized"})
+    return await call_next(request)
 
 
 class StateRequest(BaseModel):
@@ -221,6 +241,27 @@ def safe_upload_filename(filename: str) -> str:
     return name or "source.txt"
 
 
+async def read_upload_content(request: Request) -> bytes:
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_UPLOAD_BYTES:
+                raise ExtractionError("Uploaded source exceeds the size limit")
+        except ValueError as exc:
+            raise ExtractionError("Invalid upload size") from exc
+
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > MAX_UPLOAD_BYTES:
+            raise ExtractionError("Uploaded source exceeds the size limit")
+        chunks.append(chunk)
+    if not chunks or not b"".join(chunks):
+        raise ExtractionError("Uploaded source is empty")
+    return b"".join(chunks)
+
+
 def resolve_deletable_workspace(workspace: Path) -> Path:
     root = Path("workspaces").resolve()
     target = workspace.resolve()
@@ -260,16 +301,37 @@ async def import_workspace(
     filename: Annotated[str, Query(min_length=1)],
     workspace: Annotated[Path | None, Query()] = None,
 ) -> dict[str, str]:
-    content = await request.body()
-    if not content:
-        raise ExtractionError("Uploaded source is empty")
+    content = await read_upload_content(request)
+    filename = safe_upload_filename(filename)
+    suffix = Path(filename).suffix.lower()
+    if suffix not in SUPPORTED_EXTENSIONS:
+        supported = ", ".join(sorted(SUPPORTED_EXTENSIONS))
+        raise ExtractionError(
+            f"Unsupported source extension: {suffix or '(none)'}. Supported: {supported}"
+        )
     target_workspace = upload_workspace_for(filename, workspace)
-    if (target_workspace / "metadata.json").exists():
-        raise ExtractionError(f"Workspace already exists: {target_workspace}")
-    source_file = target_workspace / "source_files" / safe_upload_filename(filename)
-    source_file.parent.mkdir(parents=True, exist_ok=True)
-    source_file.write_bytes(content)
-    build_workspace(str(source_file), target_workspace)
+    target_existed = target_workspace.exists()
+    validate_workspace_target(target_workspace)
+    source_file = target_workspace / "source_files" / filename
+    if source_file.exists():
+        raise ExtractionError(f"Source file already exists: {source_file}")
+    initial_entries = set(target_workspace.iterdir()) if target_existed else set()
+    try:
+        source_file.parent.mkdir(parents=True, exist_ok=True)
+        source_file.write_bytes(content)
+        build_workspace(str(source_file), target_workspace)
+    except Exception:
+        if not target_existed:
+            shutil.rmtree(target_workspace, ignore_errors=True)
+        else:
+            for entry in target_workspace.iterdir():
+                if entry in initial_entries:
+                    continue
+                if entry.is_dir():
+                    shutil.rmtree(entry, ignore_errors=True)
+                else:
+                    entry.unlink(missing_ok=True)
+        raise
     return {"workspace": str(target_workspace)}
 
 

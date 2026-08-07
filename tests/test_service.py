@@ -491,6 +491,7 @@ def test_generate_active_recall_returns_chapter_questions(tmp_path: Path) -> Non
     assert len(result["questions"]) == 3
     assert result["eligible_for_review"] is False
     assert "main claim" in result["questions"][0]["answer_hint"]
+    assert "This is a short sample." in str(result["questions"])
 
 
 def test_save_active_recall_cards_appends_review_cards(tmp_path: Path) -> None:
@@ -503,7 +504,7 @@ def test_save_active_recall_cards_appends_review_cards(tmp_path: Path) -> None:
     content = Path(saved["path"]).read_text(encoding="utf-8")
     assert "## Active Recall" in content
     assert "**Chapter** ch01: Intro" in content
-    assert "After reading, explain" in content
+    assert "After reading ch01: Intro, explain" in content
 
 
 def test_check_feynman_summary_returns_structured_feedback(tmp_path: Path) -> None:

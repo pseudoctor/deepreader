@@ -10,6 +10,8 @@ from deep_reading.llm import (
     configured_provider_name,
     list_provider_models,
     list_provider_status,
+    load_llm_settings,
+    save_llm_settings,
     set_configured_provider_name,
     update_llm_settings,
 )
@@ -86,6 +88,21 @@ def test_saved_provider_settings_override_environment_without_exposing_key(
     assert providers["openai"]["model"] == "gpt-saved"
     assert providers["openai"]["base_url"] == "https://example.test/v1"
     assert "saved-secret" not in str(status)
+
+
+def test_llm_settings_recover_from_corrupt_file_and_save_private_permissions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = tmp_path / "settings.json"
+    monkeypatch.setenv("DEEP_READING_LLM_SETTINGS_PATH", str(settings))
+    settings.write_text("{not-json", encoding="utf-8")
+
+    assert load_llm_settings() == {"selected": None, "providers": {}}
+
+    save_llm_settings({"selected": "mock", "providers": {}})
+
+    assert settings.stat().st_mode & 0o777 == 0o600
 
 
 def test_configured_provider_falls_back_to_mock_for_unknown_value(
@@ -180,6 +197,7 @@ def test_list_provider_models_fetches_gemini_base_model_ids(
 
     def fake_urlopen(req: object, timeout: int) -> FakeResponse:
         captured["url"] = req.full_url  # type: ignore[attr-defined]
+        captured["headers"] = dict(req.header_items())  # type: ignore[attr-defined]
         assert timeout == 20
         return FakeResponse(
             {
@@ -210,6 +228,8 @@ def test_list_provider_models_fetches_gemini_base_model_ids(
 
     assert result["source"] == "remote"
     assert str(captured["url"]).startswith("https://generativelanguage.googleapis.com/v1beta/models")
+    assert "gemini-secret" not in str(captured["url"])
+    assert "gemini-secret" in str(captured["headers"])
     assert [item["value"] for item in result["models"]] == [  # type: ignore[index]
         "gemini-2.5-flash",
         "gemini-3-flash-preview",
@@ -308,7 +328,7 @@ def test_openai_provider_posts_structured_responses_request(
 
     provider = build_provider("openai")
     result = provider.check_feynman_summary(
-        {"id": "ch01", "title": "Intro"},
+        {"id": "ch01", "title": "Intro", "evidence_context": "GROUNDING_MARKER"},
         "The chapter explains the claim because it cites evidence.",
     )
 
@@ -322,6 +342,7 @@ def test_openai_provider_posts_structured_responses_request(
     assert body["model"] == "gpt-test"  # type: ignore[index]
     assert body["text"]["format"]["type"] == "json_schema"  # type: ignore[index]
     assert body["text"]["format"]["strict"] is True  # type: ignore[index]
+    assert "GROUNDING_MARKER" in json.dumps(body)
     assert headers["Authorization"].endswith("secret-value")  # type: ignore[index]
     assert "secret-value" not in json.dumps(body)
 

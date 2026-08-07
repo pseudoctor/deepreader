@@ -1554,7 +1554,7 @@ def generate_active_recall(
     chapter = get_chapter(workspace, chapter_id)
     state_value = str(state.get("chapters", {}).get(chapter_id, "not-started"))
     title = str(chapter["title"])
-    guide = build_reading_guide(chapter_id, title)
+    guide = build_reading_guide(chapter_id, title, get_chapter_text(workspace, chapter_id))
     if wants_chinese(language):
         return {
             "chapter_id": chapter_id,

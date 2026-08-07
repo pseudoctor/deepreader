@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import date
 from pathlib import Path
 
@@ -33,8 +34,29 @@ def write(path: Path, content: str) -> None:
     path.write_text(content.rstrip() + "\n", encoding="utf-8")
 
 
+WORKSPACE_MARKERS = (
+    "metadata.json",
+    "reading_state.json",
+    "reading-plan.md",
+    "chapter_notes",
+    "source_text",
+)
+
+
+def validate_workspace_target(workspace: Path) -> None:
+    if not workspace.exists():
+        return
+    if not workspace.is_dir():
+        raise ExtractionError(f"Workspace is not a directory: {workspace}")
+    if any((workspace / marker).exists() for marker in WORKSPACE_MARKERS):
+        raise ExtractionError(f"Workspace already exists: {workspace}")
+
+
 def build_workspace(source: str, workspace: Path, note_language: str = "auto") -> int:
     sources = resolve_sources(source)
+    workspace_existed = workspace.exists()
+    validate_workspace_target(workspace)
+    initial_entries = set(workspace.iterdir()) if workspace_existed else set()
     workspace.mkdir(parents=True, exist_ok=True)
     (workspace / "chapter_notes").mkdir(exist_ok=True)
     (workspace / "source_text").mkdir(exist_ok=True)
@@ -50,6 +72,13 @@ def build_workspace(source: str, workspace: Path, note_language: str = "auto") -
             errors.append({"file": str(path), "error": str(exc)})
 
     if not extracted:
+        for entry in workspace.iterdir():
+            if entry in initial_entries:
+                continue
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                entry.unlink(missing_ok=True)
         details = "; ".join(
             f"{Path(str(item['file'])).name}: {item['error']}" for item in errors
         )

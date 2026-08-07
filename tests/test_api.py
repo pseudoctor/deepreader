@@ -61,6 +61,79 @@ def test_import_workspace_endpoint_rejects_empty_upload(tmp_path: Path) -> None:
     assert response.json()["error"] == "Uploaded source is empty"
 
 
+def test_import_workspace_endpoint_rolls_back_failed_upload(tmp_path: Path) -> None:
+    client = TestClient(app)
+    workspace = tmp_path / "failed-reading"
+
+    response = client.post(
+        "/workspaces/import",
+        params={"filename": "unsupported.azw3", "workspace": str(workspace)},
+        content=b"unsupported",
+        headers={"Content-Type": "application/octet-stream"},
+    )
+
+    assert response.status_code == 400
+    assert not workspace.exists()
+
+
+def test_import_workspace_endpoint_preserves_existing_empty_target_on_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "existing-reading"
+    workspace.mkdir()
+    keep = workspace / "keep.txt"
+    keep.write_text("keep", encoding="utf-8")
+
+    def fail_build(*_args: object, **_kwargs: object) -> int:
+        raise ValueError("synthetic extraction failure")
+
+    monkeypatch.setattr("deep_reading.api.build_workspace", fail_build)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.post(
+        "/workspaces/import",
+        params={"filename": "uploaded.md", "workspace": str(workspace)},
+        content=b"# Uploaded Chapter\n\nA short uploaded book.",
+        headers={"Content-Type": "application/octet-stream"},
+    )
+
+    assert response.status_code == 500
+    assert keep.read_text(encoding="utf-8") == "keep"
+    assert not (workspace / "source_files").exists()
+
+
+def test_import_workspace_endpoint_rejects_oversized_upload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("deep_reading.api.MAX_UPLOAD_BYTES", 4)
+    client = TestClient(app)
+
+    response = client.post(
+        "/workspaces/import",
+        params={"filename": "large.md", "workspace": str(tmp_path / "large-reading")},
+        content=b"12345",
+        headers={"Content-Type": "application/octet-stream"},
+    )
+
+    assert response.status_code == 400
+    assert "size limit" in response.json()["error"]
+
+
+def test_api_token_protects_local_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEEP_READING_API_TOKEN", "test-token")
+    client = TestClient(app)
+
+    assert client.get("/health").status_code == 200
+    assert client.get("/llm/providers").status_code == 401
+    authorized = client.get(
+        "/llm/providers",
+        headers={"X-Deep-Reading-API-Token": "test-token"},
+    )
+    assert authorized.status_code == 200
+
+
 def test_delete_workspace_endpoint_removes_initialized_workspace(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -8,11 +8,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "icon:mac": "node scripts/build-icon.mjs",
+    "runtime:python": "node scripts/prepare-python-runtime.mjs",
     "signing:check": "node scripts/check-mac-signing-env.mjs",
     "dev": "npm run build && node scripts/launch-dev.mjs",
     "start": "npm run build && electron dist/main.js",
-    "package:mac": "npm run icon:mac && electron-builder --mac --dir",
-    "dist:mac": "npm run icon:mac && electron-builder --mac"
+    "package:mac": "npm run icon:mac && npm run runtime:python && electron-builder --mac --dir",
+    "dist:mac": "npm run icon:mac && npm run runtime:python && electron-builder --mac"
   },
   "build": {
     "appId": "org.pseudoctor.deep-reading",
@@ -35,8 +36,8 @@
         "to": "scripts"
       },
       {
-        "from": "../../.venv/lib",
-        "to": "python/lib"
+        "from": ".runtime/python",
+        "to": "python"
       }
     ],
     "mac": {

@@ -38,7 +38,11 @@ def slugify(value: str) -> str:
 
 
 def estimate_tokens(text: str) -> int:
-    return int(len(text.split()) / WORDS_PER_TOKEN)
+    cjk_chars = len(re.findall(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]", text))
+    non_cjk_text = re.sub(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]", " ", text)
+    if not text.strip():
+        return 0
+    return max(1, int(cjk_chars + len(non_cjk_text.split()) / WORDS_PER_TOKEN))
 
 
 CHAPTER_PATTERNS = [

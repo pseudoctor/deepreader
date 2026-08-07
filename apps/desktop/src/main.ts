@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
@@ -7,6 +8,12 @@ import path from "node:path";
 const isDev = Boolean(process.env.DEEP_READING_DESKTOP_DEV_SERVER);
 const explicitApiBaseUrl = process.env.DEEP_READING_API_BASE_URL;
 let apiBaseUrl = explicitApiBaseUrl ?? "";
+const localApiToken =
+  process.env.DEEP_READING_API_TOKEN ??
+  (explicitApiBaseUrl ? undefined : randomBytes(32).toString("hex"));
+if (localApiToken) {
+  process.env.DEEP_READING_API_TOKEN = localApiToken;
+}
 const workspaceSelectChannel = "workspace:select-folder";
 const sourceSelectChannel = "source:select-path";
 const workspaceTargetSelectChannel = "workspace:select-target-folder";
@@ -49,6 +56,17 @@ function bundledSitePackagesRoots(): string[] {
     .filter((entry) => entry.isDirectory())
     .map((entry) => path.join(libRoot, entry.name, "site-packages"))
     .filter((candidate) => fs.existsSync(candidate));
+}
+
+function resolveWorkspacePath(workspacePath: string): string {
+  if (path.isAbsolute(workspacePath)) {
+    return workspacePath;
+  }
+
+  const baseFolder = app.isPackaged
+    ? path.join(app.getPath("documents"), "Deep Reading Workspaces")
+    : repoRoot();
+  return path.resolve(baseFolder, workspacePath);
 }
 
 function pythonCandidates(): string[] {
@@ -213,10 +231,11 @@ async function ensureBackend(): Promise<void> {
 
 async function createWorkspaceFromSource(sourcePath: string, workspacePath: string): Promise<string> {
   const backendPython = await verifyBackendRuntime();
+  const resolvedWorkspacePath = resolveWorkspacePath(workspacePath);
   return new Promise((resolve, reject) => {
     const child = spawn(
       backendPython,
-      ["-m", "deep_reading.cli", "init", sourcePath, "--workspace", workspacePath],
+      ["-m", "deep_reading.cli", "init", sourcePath, "--workspace", resolvedWorkspacePath],
       {
         cwd: app.isPackaged ? process.resourcesPath : repoRoot(),
         env: backendEnv(),
@@ -231,7 +250,7 @@ async function createWorkspaceFromSource(sourcePath: string, workspacePath: stri
     child.on("error", reject);
     child.on("exit", (code) => {
       if (code === 0) {
-        resolve(workspacePath);
+        resolve(resolvedWorkspacePath);
         return;
       }
 

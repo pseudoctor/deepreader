@@ -1,4 +1,7 @@
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -37,6 +40,50 @@ def test_init_creates_workspace_artifacts(tmp_path: Path) -> None:
     }
     assert (workspace / "source_text" / "full_text.txt").exists()
     assert (workspace / "chapter_notes" / "ch01-intro.md").exists()
+
+
+def test_init_does_not_overwrite_existing_workspace(tmp_path: Path) -> None:
+    source = make_sample_source(tmp_path)
+    workspace = tmp_path / "workspace"
+
+    assert main(["init", str(source), "--workspace", str(workspace)]) == 0
+    assert main(["mark", str(workspace), "ch01", "--state", "done"]) == 0
+    plan = workspace / "reading-plan.md"
+    plan.write_text("User-edited plan\n", encoding="utf-8")
+
+    assert main(["init", str(source), "--workspace", str(workspace)]) == 1
+
+    state = json.loads((workspace / "reading_state.json").read_text(encoding="utf-8"))
+    assert state["chapters"]["ch01"] == "done"
+    assert plan.read_text(encoding="utf-8") == "User-edited plan\n"
+
+
+def test_module_cli_init_creates_workspace_artifacts(tmp_path: Path) -> None:
+    source = make_sample_source(tmp_path)
+    workspace = tmp_path / "workspace"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "deep_reading.cli",
+            "init",
+            str(source),
+            "--workspace",
+            str(workspace),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "scripts"),
+        },
+    )
+
+    assert result.returncode == 0
+    assert (workspace / "metadata.json").exists()
+    assert (workspace / "source_text" / "full_text.txt").exists()
 
 
 def test_init_saves_user_selected_note_language(tmp_path: Path) -> None:

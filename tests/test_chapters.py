@@ -1,4 +1,10 @@
-from deep_reading.chapters import detect_chapters, slugify
+from deep_reading.chapters import detect_chapters, estimate_tokens, slugify
+
+
+def test_estimate_tokens_counts_cjk_text_without_spaces() -> None:
+    text = "中文阅读" * 50
+
+    assert estimate_tokens(text) >= 200
 
 
 def test_slugify_normalizes_to_filesystem_safe_slug() -> None:
