@@ -3,7 +3,7 @@ VENV := .venv
 VENV_PYTHON := $(VENV)/bin/python
 VENV_PIP := $(VENV)/bin/pip
 
-.PHONY: install-dev api-dev web-install web-dev web-build desktop-install desktop-build desktop-icon-mac desktop-backend-check desktop-signing-check desktop-dev desktop-package-mac desktop-dist-mac lint format test check clean
+.PHONY: install-dev api-dev web-install web-dev web-build desktop-install desktop-build desktop-icon-mac desktop-backend-check desktop-signing-check desktop-dev desktop-package-mac desktop-dist-mac desktop-dist-win lint format test check clean
 
 install-dev:
 	$(PYTHON) -m venv $(VENV)
@@ -44,6 +44,9 @@ desktop-package-mac: web-build desktop-build
 
 desktop-dist-mac: web-build desktop-build
 	npm run dist:mac --prefix apps/desktop
+
+desktop-dist-win: web-build desktop-build
+	npm run dist:win --prefix apps/desktop
 
 lint:
 	$(VENV_PYTHON) -m ruff check .

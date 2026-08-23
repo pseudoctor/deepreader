@@ -96,6 +96,31 @@ make desktop-dev
 DEEP_READING_API_BASE_URL=http://127.0.0.1:8000 make desktop-dev
 ```
 
+## 桌面端打包
+
+macOS DMG：
+
+```bash
+make desktop-dist-mac
+```
+
+产物位于 `apps/desktop/release/*.dmg`。当前未配置 Apple Developer ID，生成的 DMG 未签名。
+
+Windows `.exe` 推荐使用 GitHub Actions：推送代码后，打开 `Actions → Windows Package`，在运行结果的
+`Artifacts → deep-reading-windows` 下载构建产物；也可以手动触发 workflow。
+
+在 Windows 本机打包：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .
+npm ci --prefix apps/web
+npm ci --prefix apps/desktop
+npm run dist:win --prefix apps/desktop
+```
+
+Windows 产物位于 `apps/desktop/release/*.exe`。构建产物目录已被 Git 忽略，不会随源码提交；请通过 GitHub Actions artifact 或 GitHub Release 分发。
+
 ## AI Provider 设置
 
 Web 和桌面端都通过顶部导航栏的 `Settings / 设置` 打开模型设置。当前预留并支持：

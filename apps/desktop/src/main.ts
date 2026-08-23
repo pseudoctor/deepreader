@@ -46,7 +46,13 @@ function bundledSitePackagesRoots(): string[] {
     return [];
   }
 
-  const libRoot = path.join(process.resourcesPath, "python", "lib");
+  const pythonRoot = path.join(process.resourcesPath, "python");
+  if (process.platform === "win32") {
+    const sitePackages = path.join(pythonRoot, "Lib", "site-packages");
+    return fs.existsSync(sitePackages) ? [sitePackages] : [];
+  }
+
+  const libRoot = path.join(pythonRoot, "lib");
   if (!fs.existsSync(libRoot)) {
     return [];
   }
@@ -70,16 +76,22 @@ function resolveWorkspacePath(workspacePath: string): string {
 }
 
 function pythonCandidates(): string[] {
-  const candidates = [];
+  const candidates: string[] = [];
 
   if (app.isPackaged) {
-    candidates.push(
-      path.join(process.resourcesPath, "python", "bin", "python3"),
-      path.join(process.resourcesPath, "python", "bin", "python"),
-    );
+    const runtimeRoot = path.join(process.resourcesPath, "python");
+    if (process.platform === "win32") {
+      candidates.push(path.join(runtimeRoot, "python.exe"), path.join(runtimeRoot, "bin", "python.exe"));
+    } else {
+      candidates.push(path.join(runtimeRoot, "bin", "python3"), path.join(runtimeRoot, "bin", "python"));
+    }
   }
 
-  candidates.push(path.join(repoRoot(), ".venv", "bin", "python"), "python3");
+  if (process.platform === "win32") {
+    candidates.push(path.join(repoRoot(), ".venv", "Scripts", "python.exe"), "python");
+  } else {
+    candidates.push(path.join(repoRoot(), ".venv", "bin", "python"), "python3");
+  }
   return candidates;
 }
 
@@ -127,7 +139,7 @@ function runPythonCheck(executable: string): Promise<void> {
 async function verifyBackendRuntime(): Promise<string> {
   const attempts = [];
   for (const candidate of pythonCandidates()) {
-    if (candidate !== "python3" && !fs.existsSync(candidate)) {
+    if (path.isAbsolute(candidate) && !fs.existsSync(candidate)) {
       attempts.push(`${candidate}: not found`);
       continue;
     }
