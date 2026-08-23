@@ -34,6 +34,8 @@ ADVANCED_FILES = [
 ]
 
 EXPORT_MODES = {"learning_archive", "full"}
+INVALID_FILENAME_CHARS = {"/", "\\", ":", "*", "?", '"', "<", ">", "|"}
+MAX_FILENAME_COMPONENT_BYTES = 100
 
 
 def markdown_files(workspace: Path) -> list[Path]:
@@ -48,12 +50,22 @@ def obsidian_link(path: Path) -> str:
     return f"[[{path.with_suffix('').as_posix()}]]"
 
 
+def safe_file_component(value: str) -> str:
+    sanitized = "".join(
+        "-" if char in INVALID_FILENAME_CHARS or ord(char) < 32 else char for char in value
+    )
+    while ".." in sanitized:
+        sanitized = sanitized.replace("..", "-")
+    sanitized = sanitized.strip(" .")
+    return sanitized.encode("utf-8")[:MAX_FILENAME_COMPONENT_BYTES].decode(
+        "utf-8", errors="ignore"
+    ).rstrip(" .")
+
+
 def archive_file_name(chapter_id: str, title: str) -> str:
-    safe_title = "".join(
-        "-" if char in {"/", "\\", ":", "*", "?", '"', "<", ">", "|"} else char
-        for char in title
-    ).strip()
-    return f"{chapter_id} {safe_title or chapter_id}.md"
+    safe_id = safe_file_component(chapter_id) or "chapter"
+    safe_title = safe_file_component(title) or safe_id
+    return f"{safe_id} {safe_title}.md"
 
 
 def archive_chapter_path(chapter: dict[str, object]) -> Path:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from pathlib import Path
 
@@ -21,6 +22,8 @@ def append_text(path: Path, content: str) -> None:
 
 def chapter_note_path(workspace: Path, chapter_id: str) -> Path:
     ensure_workspace(workspace)
+    if re.fullmatch(r"[A-Za-z0-9_-]+", chapter_id) is None:
+        raise ExtractionError(f"Invalid chapter ID: {chapter_id}")
     notes = sorted((workspace / "chapter_notes").glob(f"{chapter_id}-*.md"))
     if not notes:
         raise ExtractionError(f"No chapter note found for {chapter_id}")

@@ -12,7 +12,37 @@ def load_metadata(workspace: Path) -> dict:
     metadata_path = workspace / "metadata.json"
     if not metadata_path.exists():
         raise ExtractionError(f"Missing metadata.json in {workspace}")
-    return json.loads(metadata_path.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ExtractionError(f"Invalid metadata.json in {workspace}") from exc
+    if not isinstance(data, dict):
+        raise ExtractionError(f"Invalid metadata.json in {workspace}")
+    chapters = data.get("chapters")
+    if not isinstance(chapters, list) or not chapters:
+        raise ExtractionError(f"Invalid chapters in metadata.json in {workspace}")
+    seen_ids: set[str] = set()
+    previous_line = 0
+    for chapter in chapters:
+        if not isinstance(chapter, dict):
+            raise ExtractionError(f"Invalid chapters in metadata.json in {workspace}")
+        chapter_id = chapter.get("id")
+        title = chapter.get("title")
+        line = chapter.get("line")
+        if (
+            not isinstance(chapter_id, str)
+            or not chapter_id.strip()
+            or chapter_id in seen_ids
+            or not isinstance(title, str)
+            or not title.strip()
+            or not isinstance(line, int)
+            or isinstance(line, bool)
+            or line <= previous_line
+        ):
+            raise ExtractionError(f"Invalid chapters in metadata.json in {workspace}")
+        seen_ids.add(chapter_id)
+        previous_line = line
+    return data
 
 
 def load_full_text(workspace: Path) -> list[str]:

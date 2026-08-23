@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from deep_reading.cli import main
+from deep_reading.obsidian import archive_chapter_path
 
 
 def make_workspace(tmp_path: Path) -> Path:
@@ -75,3 +76,17 @@ def test_export_obsidian_returns_error_for_missing_workspace(tmp_path: Path) -> 
     )
 
     assert result == 1
+
+
+def test_archive_chapter_path_cannot_escape_chapter_notes() -> None:
+    path = archive_chapter_path({"id": "../../outside", "title": "Unsafe/Title\n"})
+
+    assert path.parent == Path("Chapter Notes")
+    assert ".." not in path.parts
+    assert path.name == "----outside Unsafe-Title-.md"
+
+
+def test_archive_chapter_path_limits_utf8_filename_bytes() -> None:
+    path = archive_chapter_path({"id": "章" * 100, "title": "📖" * 100})
+
+    assert len(path.name.encode("utf-8")) <= 255

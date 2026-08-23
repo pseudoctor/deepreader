@@ -78,6 +78,33 @@ def test_get_chapter_text_rejects_unknown_chapter(tmp_path: Path) -> None:
         raise AssertionError("Expected ExtractionError")
 
 
+def test_get_chapter_text_reports_invalid_metadata(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    (workspace / "metadata.json").write_text("{not-json", encoding="utf-8")
+
+    try:
+        get_chapter_text(workspace, "ch01")
+    except ExtractionError as exc:
+        assert "Invalid metadata.json" in str(exc)
+    else:
+        raise AssertionError("Expected ExtractionError")
+
+
+def test_get_chapter_text_reports_invalid_chapter_schema(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    (workspace / "metadata.json").write_text(
+        json.dumps({"chapters": "not-a-list"}),
+        encoding="utf-8",
+    )
+
+    try:
+        get_chapter_text(workspace, "ch01")
+    except ExtractionError as exc:
+        assert "Invalid chapters in metadata.json" in str(exc)
+    else:
+        raise AssertionError("Expected ExtractionError")
+
+
 def test_chapter_text_command_prints_chapter_text(tmp_path: Path, capsys) -> None:
     workspace = make_workspace(tmp_path)
 

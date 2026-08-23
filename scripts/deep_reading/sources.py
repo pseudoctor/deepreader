@@ -35,22 +35,22 @@ class HTMLTextExtractor(html.parser.HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.parts: list[str] = []
-        self.skip = False
+        self.skip_depth = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in {"script", "style", "noscript"}:
-            self.skip = True
+            self.skip_depth += 1
         if tag in {"p", "br", "div", "section", "article", "h1", "h2", "h3", "li"}:
             self.parts.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in {"script", "style", "noscript"}:
-            self.skip = False
+        if tag in {"script", "style", "noscript"} and self.skip_depth:
+            self.skip_depth -= 1
         if tag in {"p", "div", "section", "article", "h1", "h2", "h3", "li"}:
             self.parts.append("\n")
 
     def handle_data(self, data: str) -> None:
-        if not self.skip:
+        if not self.skip_depth:
             cleaned = re.sub(r"\s+", " ", data).strip()
             if cleaned:
                 self.parts.append(cleaned + " ")

@@ -35,10 +35,7 @@ function pythonFrameworkDependency(pythonExecutable) {
     .split("\n")
     .map((value) => value.trim())
     .find((value) => value.split(" ")[0].includes("Python.framework/") && value.split(" ")[0].endsWith("/Python"));
-  if (!line) {
-    throw new Error(`Could not find Python.framework dependency for ${pythonExecutable}`);
-  }
-  return line.split(" ")[0];
+  return line?.split(" ")[0] ?? null;
 }
 
 function frameworkRootFromDependency(frameworkPythonPath) {
@@ -61,8 +58,6 @@ function pythonFrameworkVersion(frameworkPythonPath) {
 function prepareRuntime() {
   const pythonExecutable = realPythonExecutable();
   const frameworkDependency = pythonFrameworkDependency(pythonExecutable);
-  const frameworkRoot = frameworkRootFromDependency(frameworkDependency);
-  const frameworkVersion = pythonFrameworkVersion(frameworkDependency);
   const venvLib = path.join(venvRoot, "lib");
 
   if (!fs.existsSync(venvLib)) {
@@ -72,21 +67,46 @@ function prepareRuntime() {
   fs.rmSync(runtimeRoot, { recursive: true, force: true });
   fs.mkdirSync(runtimeBin, { recursive: true });
 
-  copyRecursive(frameworkRoot, path.join(runtimeFrameworks, "Python.framework"), {
-    verbatimSymlinks: true,
-  });
-  copyRecursive(venvLib, runtimeLib, { dereference: true });
+  let pythonVersion;
+  if (frameworkDependency) {
+    const frameworkRoot = frameworkRootFromDependency(frameworkDependency);
+    pythonVersion = pythonFrameworkVersion(frameworkDependency);
+    copyRecursive(frameworkRoot, path.join(runtimeFrameworks, "Python.framework"), {
+      verbatimSymlinks: true,
+    });
+    copyRecursive(venvLib, runtimeLib, { dereference: true });
+  } else {
+    const basePrefix = run(pythonExecutable, [
+      "-c",
+      "import sys; print(sys.base_prefix)",
+    ]);
+    pythonVersion = run(pythonExecutable, [
+      "-c",
+      "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')",
+    ]);
+    const baseLib = path.join(basePrefix, "lib");
+    if (!fs.existsSync(baseLib)) {
+      throw new Error(`Missing standalone Python lib directory: ${baseLib}`);
+    }
+    copyRecursive(baseLib, runtimeLib, { dereference: true });
+    const venvSitePackages = path.join(venvLib, `python${pythonVersion}`, "site-packages");
+    const runtimeSitePackages = path.join(runtimeLib, `python${pythonVersion}`, "site-packages");
+    fs.rmSync(runtimeSitePackages, { recursive: true, force: true });
+    fs.cpSync(venvSitePackages, runtimeSitePackages, { recursive: true, dereference: true });
+  }
 
-  const runtimePythonName = `python${frameworkVersion}`;
+  const runtimePythonName = `python${pythonVersion}`;
   const runtimePython = path.join(runtimeBin, runtimePythonName);
   fs.copyFileSync(pythonExecutable, runtimePython);
   fs.chmodSync(runtimePython, 0o755);
   fs.symlinkSync(runtimePythonName, path.join(runtimeBin, "python3"));
   fs.symlinkSync(runtimePythonName, path.join(runtimeBin, "python"));
 
-  const relativeFramework = `@executable_path/../Frameworks/Python.framework/Versions/${frameworkVersion}/Python`;
-  run("install_name_tool", ["-change", frameworkDependency, relativeFramework, runtimePython]);
-  run("codesign", ["--force", "--deep", "--sign", "-", path.join(runtimeFrameworks, "Python.framework")]);
+  if (frameworkDependency) {
+    const relativeFramework = `@executable_path/../Frameworks/Python.framework/Versions/${pythonVersion}/Python`;
+    run("install_name_tool", ["-change", frameworkDependency, relativeFramework, runtimePython]);
+    run("codesign", ["--force", "--deep", "--sign", "-", path.join(runtimeFrameworks, "Python.framework")]);
+  }
   run("codesign", ["--force", "--sign", "-", runtimePython]);
 
   const check = run(runtimePython, [
@@ -97,7 +117,7 @@ function prepareRuntime() {
       ...process.env,
       PYTHONPATH: [
         path.join(repoRoot, "scripts"),
-        path.join(runtimeLib, `python${frameworkVersion}`, "site-packages"),
+        path.join(runtimeLib, `python${pythonVersion}`, "site-packages"),
       ].join(path.delimiter),
     },
   });

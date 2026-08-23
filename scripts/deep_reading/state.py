@@ -6,19 +6,40 @@ import json
 from pathlib import Path
 
 from .errors import ExtractionError
+from .notes import chapter_note_path
+from .reader import load_metadata
 from .templates import TEMPLATE_BUILDERS
 from .workspace import write
+
+ALLOWED_STATES = {"not-started", "reading", "done", "review", "weak"}
 
 
 def load_state(workspace: Path) -> dict:
     state_path = workspace / "reading_state.json"
     if not state_path.exists():
         raise ExtractionError(f"Missing reading_state.json in {workspace}")
-    return json.loads(state_path.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ExtractionError(f"Invalid reading_state.json in {workspace}") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("chapters"), dict):
+        raise ExtractionError(f"Invalid reading_state.json in {workspace}")
+    chapters = data["chapters"]
+    if any(
+        not isinstance(chapter_id, str)
+        or not isinstance(state_value, str)
+        or state_value not in ALLOWED_STATES
+        for chapter_id, state_value in chapters.items()
+    ):
+        raise ExtractionError(f"Invalid reading_state.json in {workspace}")
+    current = data.get("current")
+    if current is not None and (not isinstance(current, str) or current not in chapters):
+        raise ExtractionError(f"Invalid reading_state.json in {workspace}")
+    return data
 
 
 def cmd_status(workspace: Path) -> int:
-    metadata = json.loads((workspace / "metadata.json").read_text(encoding="utf-8"))
+    metadata = load_metadata(workspace)
     state = load_state(workspace)
     counts: dict[str, int] = {}
     for value in state["chapters"].values():
@@ -47,7 +68,7 @@ def cmd_status(workspace: Path) -> int:
 
 
 def cmd_list(workspace: Path) -> int:
-    metadata = json.loads((workspace / "metadata.json").read_text(encoding="utf-8"))
+    metadata = load_metadata(workspace)
     state = load_state(workspace)
     for chapter in metadata["chapters"]:
         chapter_state = state["chapters"].get(chapter["id"], "not-started")
@@ -56,19 +77,16 @@ def cmd_list(workspace: Path) -> int:
 
 
 def cmd_chapter(workspace: Path, chapter_id: str) -> int:
-    notes = sorted((workspace / "chapter_notes").glob(f"{chapter_id}-*.md"))
-    if not notes:
-        raise ExtractionError(f"No chapter note found for {chapter_id}")
-    print(notes[0])
-    print(notes[0].read_text(encoding="utf-8"))
+    note = chapter_note_path(workspace, chapter_id)
+    print(note)
+    print(note.read_text(encoding="utf-8"))
     return 0
 
 
 def cmd_mark(workspace: Path, chapter_id: str, state_value: str) -> int:
-    allowed = {"not-started", "reading", "done", "review", "weak"}
-    if state_value not in allowed:
+    if state_value not in ALLOWED_STATES:
         raise ExtractionError(
-            f"Invalid state '{state_value}'. Use one of: {', '.join(sorted(allowed))}"
+            f"Invalid state '{state_value}'. Use one of: {', '.join(sorted(ALLOWED_STATES))}"
         )
     state = load_state(workspace)
     if chapter_id not in state["chapters"]:
@@ -92,7 +110,10 @@ def cmd_library(workspace: Path) -> int:
     path = workspace / "library.json"
     if not path.exists():
         raise ExtractionError(f"Missing library.json in {workspace}")
-    data = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ExtractionError(f"Invalid library.json in {workspace}") from exc
     print(json.dumps(data, indent=2, ensure_ascii=False))
     return 0
 

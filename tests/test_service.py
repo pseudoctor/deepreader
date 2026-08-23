@@ -164,6 +164,14 @@ def test_add_weak_concept_updates_learning_loop(tmp_path: Path) -> None:
     assert (workspace / "learning_loop.json").exists()
 
 
+def test_get_status_reports_invalid_learning_loop(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    (workspace / "learning_loop.json").write_text("{not-json", encoding="utf-8")
+
+    with pytest.raises(ExtractionError, match="Invalid learning_loop.json"):
+        get_status(workspace)
+
+
 def test_add_weak_concept_rejects_empty_concept(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
 

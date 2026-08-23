@@ -11,10 +11,9 @@ from .llm import build_provider
 from .notes import append_text, append_to_section, chapter_note_path, ensure_workspace
 from .obsidian import export_obsidian_files
 from .reader import get_chapter, get_chapter_text, load_metadata
-from .state import load_state
+from .state import ALLOWED_STATES, load_state
 from .workspace import write
 
-ALLOWED_STATES = {"not-started", "reading", "done", "review", "weak"}
 ALLOWED_NOTE_TYPES = {"Quote", "My Thought", "AI Explanation", "Question"}
 LEARNING_LOOP_FILE = "learning_loop.json"
 
@@ -402,7 +401,10 @@ def load_learning_loop_state(workspace: Path) -> dict[str, object]:
     path = workspace / LEARNING_LOOP_FILE
     if not path.exists():
         return {"weak_concepts": []}
-    data = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ExtractionError(f"Invalid {LEARNING_LOOP_FILE}") from exc
     if not isinstance(data, dict):
         raise ExtractionError(f"Invalid {LEARNING_LOOP_FILE}")
     weak_concepts = data.get("weak_concepts", [])

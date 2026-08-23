@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 import pytest
-from deep_reading.api import app
+from deep_reading.api import app, cors_origins
 from deep_reading.cli import main
 from fastapi.testclient import TestClient
 
@@ -28,6 +28,14 @@ def test_health_endpoint() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_null_cors_origin_requires_api_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DEEP_READING_API_TOKEN", raising=False)
+    assert "null" not in cors_origins()
+
+    monkeypatch.setenv("DEEP_READING_API_TOKEN", "test-token")
+    assert "null" in cors_origins()
 
 
 def test_import_workspace_endpoint_creates_workspace_from_upload(tmp_path: Path) -> None:

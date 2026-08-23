@@ -58,6 +58,19 @@ def test_init_does_not_overwrite_existing_workspace(tmp_path: Path) -> None:
     assert plan.read_text(encoding="utf-8") == "User-edited plan\n"
 
 
+def test_init_does_not_overwrite_generated_file_in_existing_directory(tmp_path: Path) -> None:
+    source = make_sample_source(tmp_path)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    book_map = workspace / "book_map.md"
+    book_map.write_text("Existing notes\n", encoding="utf-8")
+
+    with pytest.raises(ExtractionError, match="Workspace already exists"):
+        build_workspace(str(source), workspace)
+
+    assert book_map.read_text(encoding="utf-8") == "Existing notes\n"
+
+
 def test_module_cli_init_creates_workspace_artifacts(tmp_path: Path) -> None:
     source = make_sample_source(tmp_path)
     workspace = tmp_path / "workspace"
@@ -122,6 +135,29 @@ def test_mark_updates_reading_state(tmp_path: Path) -> None:
     state = json.loads((workspace / "reading_state.json").read_text(encoding="utf-8"))
     assert state["current"] == "ch02"
     assert state["chapters"]["ch02"] == "reading"
+
+
+def test_status_reports_invalid_reading_state(tmp_path: Path, capsys) -> None:
+    source = make_sample_source(tmp_path)
+    workspace = tmp_path / "workspace"
+    assert main(["init", str(source), "--workspace", str(workspace)]) == 0
+    (workspace / "reading_state.json").write_text("{not-json", encoding="utf-8")
+
+    assert main(["status", str(workspace)]) == 1
+    assert "Invalid reading_state.json" in capsys.readouterr().err
+
+
+def test_status_reports_invalid_state_value_type(tmp_path: Path, capsys) -> None:
+    source = make_sample_source(tmp_path)
+    workspace = tmp_path / "workspace"
+    assert main(["init", str(source), "--workspace", str(workspace)]) == 0
+    (workspace / "reading_state.json").write_text(
+        json.dumps({"current": "ch01", "chapters": {"ch01": []}}),
+        encoding="utf-8",
+    )
+
+    assert main(["status", str(workspace)]) == 1
+    assert "Invalid reading_state.json" in capsys.readouterr().err
 
 
 def test_template_command_prints_known_template(tmp_path: Path, capsys) -> None:

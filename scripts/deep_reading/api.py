@@ -57,18 +57,25 @@ from .workspace import build_workspace, validate_workspace_target
 WorkspaceQuery = Annotated[Path, Query()]
 ChapterIdQuery = Annotated[str, Query()]
 
+API_TOKEN_ENV = "DEEP_READING_API_TOKEN"
+API_TOKEN_HEADER = "X-Deep-Reading-API-Token"
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+
+
+def cors_origins() -> list[str]:
+    origins = ["http://127.0.0.1:5173", "http://127.0.0.1:5174"]
+    if os.environ.get(API_TOKEN_ENV, "").strip():
+        origins.append("null")
+    return origins
+
 
 app = FastAPI(title="Deep Reading API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5173", "http://127.0.0.1:5174", "null"],
+    allow_origins=cors_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-API_TOKEN_ENV = "DEEP_READING_API_TOKEN"
-API_TOKEN_HEADER = "X-Deep-Reading-API-Token"
-MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 
 @app.middleware("http")
@@ -257,7 +264,7 @@ async def read_upload_content(request: Request) -> bytes:
         if total > MAX_UPLOAD_BYTES:
             raise ExtractionError("Uploaded source exceeds the size limit")
         chunks.append(chunk)
-    if not chunks or not b"".join(chunks):
+    if total == 0:
         raise ExtractionError("Uploaded source is empty")
     return b"".join(chunks)
 

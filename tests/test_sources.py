@@ -88,6 +88,18 @@ def test_extract_html_skips_script_style_and_keeps_body_text(tmp_path: Path) -> 
     assert "hidden" not in result.text
 
 
+def test_extract_html_keeps_skipping_inside_nested_hidden_elements(tmp_path: Path) -> None:
+    source = tmp_path / "nested.html"
+    source.write_text(
+        "<noscript>hidden<style>also hidden</style>still hidden</noscript><p>Visible</p>",
+        encoding="utf-8",
+    )
+
+    result = extract_html(source)
+
+    assert result.text == "Visible"
+
+
 def test_extract_rtf_uses_regex_fallback_when_striprtf_is_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

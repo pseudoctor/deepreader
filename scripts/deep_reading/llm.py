@@ -180,6 +180,7 @@ EVIDENCE_MARKERS = (
 VAGUE_MARKERS = ("things", "stuff", "important", "interesting", "很多", "一些", "重要", "有趣")
 REQUEST_TIMEOUT_SECONDS = 60
 MODEL_CATALOG_TIMEOUT_SECONDS = 20
+MAX_REMOTE_RESPONSE_BYTES = 10 * 1024 * 1024
 
 JSON_SCHEMAS: dict[str, dict[str, object]] = {
     "feynman_check": {
@@ -513,10 +514,17 @@ def fallback_model_list(spec: LLMProviderSpec) -> list[dict[str, str]]:
     return [{"value": item, "label": item} for item in spec.fallback_models]
 
 
+def read_response_bytes(response) -> bytes:  # noqa: ANN001
+    data = response.read(MAX_REMOTE_RESPONSE_BYTES + 1)
+    if len(data) > MAX_REMOTE_RESPONSE_BYTES:
+        raise RuntimeError("LLM response exceeds the size limit.")
+    return data
+
+
 def read_json_url(url: str, headers: dict[str, str]) -> dict[str, object]:
     req = request.Request(url, headers=headers, method="GET")
     with request.urlopen(req, timeout=MODEL_CATALOG_TIMEOUT_SECONDS) as response:
-        data = json.loads(response.read().decode("utf-8"))
+        data = json.loads(read_response_bytes(response).decode("utf-8"))
     if not isinstance(data, dict):
         raise RuntimeError("Model catalog response is not a JSON object.")
     return data
@@ -629,7 +637,10 @@ def json_schema_payload(schema_name: str) -> dict[str, object]:
 
 
 def provider_error_message(exc: error.HTTPError) -> str:
-    raw_body = exc.read().decode("utf-8", errors="replace")
+    try:
+        raw_body = read_response_bytes(exc).decode("utf-8", errors="replace")
+    except RuntimeError as limit_error:
+        return str(limit_error)
     try:
         payload = json.loads(raw_body)
     except json.JSONDecodeError:
@@ -663,7 +674,7 @@ def post_json(
 
     try:
         with request.urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-            data = json.loads(response.read().decode("utf-8"))
+            data = json.loads(read_response_bytes(response).decode("utf-8"))
     except error.HTTPError as exc:
         message = provider_error_message(exc)
         raise RuntimeError(

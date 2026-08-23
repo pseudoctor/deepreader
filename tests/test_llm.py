@@ -11,6 +11,7 @@ from deep_reading.llm import (
     list_provider_models,
     list_provider_status,
     load_llm_settings,
+    read_response_bytes,
     save_llm_settings,
     set_configured_provider_name,
     update_llm_settings,
@@ -27,8 +28,16 @@ class FakeResponse:
     def __exit__(self, *_args: object) -> None:
         return None
 
-    def read(self) -> bytes:
-        return json.dumps(self.payload).encode("utf-8")
+    def read(self, size: int = -1) -> bytes:
+        data = json.dumps(self.payload).encode("utf-8")
+        return data if size < 0 else data[:size]
+
+
+def test_remote_response_size_is_limited(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("deep_reading.llm.MAX_REMOTE_RESPONSE_BYTES", 4)
+
+    with pytest.raises(RuntimeError, match="size limit"):
+        read_response_bytes(BytesIO(b"12345"))
 
 
 def test_list_provider_status_includes_reserved_providers(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -409,6 +418,26 @@ def test_openai_provider_reports_http_error_without_secret(
     assert "status 400" in message
     assert "Invalid model" in message
     assert "secret-value" not in message
+
+
+def test_openai_provider_limits_http_error_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_urlopen(_req: object, timeout: int) -> FakeResponse:
+        assert timeout == 60
+        raise HTTPError(
+            url="https://example.test/v1/responses",
+            code=500,
+            msg="Server Error",
+            hdrs={},
+            fp=BytesIO(b"12345"),
+        )
+
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-value")
+    monkeypatch.setattr("deep_reading.llm.MAX_REMOTE_RESPONSE_BYTES", 4)
+    monkeypatch.setattr("deep_reading.llm.request.urlopen", fake_urlopen)
+
+    provider = build_provider("openai")
+    with pytest.raises(RuntimeError, match="size limit"):
+        provider.explain_selection({"id": "ch01", "title": "Intro"}, "Selected text.")
 
 
 def test_claude_provider_uses_messages_tool_schema(

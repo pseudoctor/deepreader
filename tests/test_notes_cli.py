@@ -60,6 +60,27 @@ def test_note_returns_error_for_unknown_section(tmp_path: Path) -> None:
     assert result == 1
 
 
+def test_note_rejects_glob_pattern_as_chapter_id(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    note = workspace / "chapter_notes" / "ch01-intro.md"
+    original = note.read_text(encoding="utf-8")
+
+    result = main(
+        [
+            "note",
+            str(workspace),
+            "*",
+            "--section",
+            "Confusions",
+            "--text",
+            "This must not be written.",
+        ]
+    )
+
+    assert result == 1
+    assert note.read_text(encoding="utf-8") == original
+
+
 def test_insight_appends_to_personal_insights(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
 

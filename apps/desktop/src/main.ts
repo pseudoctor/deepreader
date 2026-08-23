@@ -197,6 +197,11 @@ async function waitForBackend(): Promise<void> {
 
 async function ensureBackend(): Promise<void> {
   if (explicitApiBaseUrl) {
+    if (!localApiToken) {
+      throw new Error(
+        "DEEP_READING_API_TOKEN is required when DEEP_READING_API_BASE_URL is configured.",
+      );
+    }
     apiBaseUrl = explicitApiBaseUrl;
     if (await isBackendHealthy()) return;
     throw new Error(`Configured Deep Reading backend is not reachable at ${apiBaseUrl}`);
@@ -354,8 +359,17 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(
     workspaceCreateChannel,
-    async (_event, request: { sourcePath: string; workspacePath: string }) => {
-      if (!request.sourcePath || !request.workspacePath) {
+    async (_event, request: unknown) => {
+      if (
+        !request ||
+        typeof request !== "object" ||
+        !("sourcePath" in request) ||
+        !("workspacePath" in request) ||
+        typeof request.sourcePath !== "string" ||
+        typeof request.workspacePath !== "string" ||
+        !request.sourcePath.trim() ||
+        !request.workspacePath.trim()
+      ) {
         throw new Error("Source path and workspace path are required.");
       }
 
@@ -382,6 +396,8 @@ app.whenReady().then(async () => {
     const message = error instanceof Error ? error.message : String(error);
     dialog.showErrorBox("Deep Reading backend failed to start", message);
     console.error(error);
+    app.quit();
+    return;
   }
 
   createWindow();
