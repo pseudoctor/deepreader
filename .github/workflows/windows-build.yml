@@ -39,6 +39,12 @@ jobs:
       - name: Install desktop dependencies
         run: npm ci --prefix apps/desktop
 
+      - name: Build web application
+        run: npm run build --prefix apps/web
+
+      - name: Build desktop application
+        run: npm run build --prefix apps/desktop
+
       - name: Build Windows package
         run: npm run dist:win --prefix apps/desktop
 
