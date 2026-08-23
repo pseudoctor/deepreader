@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
-  <title>Deep Reading</title>
+  <title>Deepreader</title>
   <defs>
     <linearGradient id="cover" x1="176" y1="120" x2="820" y2="900" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#214D45"/>

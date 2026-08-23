@@ -14,7 +14,7 @@ export const selectionOutputLanguages: { code: SelectionOutputLanguage; labelKey
 
 export const translations = {
   en: {
-    appTitle: "Deep Reading",
+    appTitle: "Deepreader",
     appSubtitle: "Workspace reader",
     language: "Language",
     providerSettings: "AI provider",

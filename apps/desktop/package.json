@@ -1,6 +1,6 @@
 {
-  "name": "deep-reading-desktop",
-  "version": "0.1.0",
+  "name": "deepreader-desktop",
+  "version": "0.0.1",
   "description": "A local-first deep reading coach for serious readers.",
   "author": "pseudoctor <github@solo-digitalpass.eu.org>",
   "private": true,
@@ -20,7 +20,7 @@
   },
   "build": {
     "appId": "org.pseudoctor.deep-reading",
-    "productName": "Deep Reading",
+    "productName": "Deepreader",
     "directories": {
       "output": "release"
     },
@@ -62,7 +62,7 @@
       ]
     },
     "dmg": {
-      "title": "Deep Reading ${version}",
+      "title": "Deepreader ${version}",
       "backgroundColor": "#f3f1eb",
       "window": {
         "width": 560,

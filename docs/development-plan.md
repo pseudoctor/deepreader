@@ -1,8 +1,8 @@
-# Deep Reading Product Development Plan
+# Deepreader Product Development Plan
 
 ## Product Positioning
 
-Deep Reading should become a local-first AI deep reading coach for serious readers.
+Deepreader should become a local-first AI deep reading coach for serious readers.
 
 It is not a generic summarizer, read-it-later app, or document chatbot. Its core promise is:
 

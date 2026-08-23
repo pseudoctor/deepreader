@@ -1,6 +1,6 @@
-# Deep Reading Skill 使用说明
+# Deepreader 使用说明
 
-`deep-reading` 是一个 AI 深度阅读教练 skill，用来帮助你深入阅读、理解、复述、提问、复习和应用一本书或一组长文档。
+`deep-reading` 是一个 AI 深度阅读应用，用来帮助你深入阅读、理解、复述、提问、复习和应用一本书或一组长文档。
 
 它不是图书管理工具，也不是简单总结工具。它的目标是把一本书变成一个可持续陪读的阅读工作区，让 AI 带你完成：
 
@@ -18,53 +18,53 @@
 - 跨章节综合
 - 应用迁移
 
-## 推荐用法：直接让 AI 操作
+## 推荐用法：使用应用或脚本
 
-正常情况下，你不需要记 Python 命令。直接对 Codex、Claude 或其他支持本地工具调用的 AI 说自然语言即可。
+你可以通过 Web 或 Electron 桌面端使用 Deepreader，也可以让支持本地工具调用的 AI 操作项目脚本。正常情况下，你不需要记 Python 命令。
 
 示例：
 
 ```text
-使用 /Users/armewang/Downloads/deep-reading 这个 skill，帮我初始化 ~/Books/ddia.pdf 的阅读工作区。
+使用 Deepreader，帮我初始化 ~/Books/ddia.pdf 的阅读工作区。
 ```
 
 ```text
-用 deep-reading 带我读 ch01，先不要总结，先问我阅读前问题。
+用 Deepreader 带我读 ch01，先不要总结，先问我阅读前问题。
 ```
 
 ```text
-用 deep-reading 检查我对 ch02 的总结。
+用 Deepreader 检查我对 ch02 的总结。
 ```
 
 ```text
-用 deep-reading 给 ch03 生成主动回忆题和复习卡片。
+用 Deepreader 给 ch03 生成主动回忆题和复习卡片。
 ```
 
 ```text
-用 deep-reading 总结 ch01-ch03 的概念关系。
+用 Deepreader 总结 ch01-ch03 的概念关系。
 ```
 
 ```text
-用 deep-reading 把这章内容应用到我的项目/论文/代码里。
+用 Deepreader 把这章内容应用到我的项目/论文/代码里。
 ```
 
 ```text
-用 deep-reading 对这本书做 x-ray 深拆：骨架扫描、论证解剖、灵魂提取。
+用 Deepreader 对这本书做 x-ray 深拆：骨架扫描、论证解剖、灵魂提取。
 ```
 
 ```text
-用 deep-reading 给 ch04 做图尔敏论证分析，标出 Claim、Grounds、Warrant、Rebuttal。
+用 Deepreader 给 ch04 做图尔敏论证分析，标出 Claim、Grounds、Warrant、Rebuttal。
 ```
 
 ```text
-用 deep-reading 为 ch05 的关键主张生成 evidence cards，标明来源位置和不确定性。
+用 Deepreader 为 ch05 的关键主张生成 evidence cards，标明来源位置和不确定性。
 ```
 
 ```text
-用 deep-reading 把这个文件夹里的几本书做成 multi-source map，比较它们的共识和分歧。
+用 Deepreader 把这个文件夹里的几本书做成 multi-source map，比较它们的共识和分歧。
 ```
 
-AI 会根据 skill 自动执行必要的本地脚本，例如初始化工作区、读取章节笔记、查看阅读状态、更新进度等。
+Deepreader 会调用必要的本地脚本，例如初始化工作区、读取章节笔记、查看阅读状态和更新进度等。
 
 ## 当前应用入口
 
@@ -213,7 +213,7 @@ python3 scripts/reading_workspace.py export-obsidian <workspace> --vault-folder 
 对 AI 说：
 
 ```text
-用 deep-reading 初始化这本书：~/Books/example.pdf
+用 Deepreader 初始化这本书：~/Books/example.pdf
 ```
 
 AI 会创建一个阅读工作区，通常类似：
@@ -244,7 +244,7 @@ example-reading/
 你可以说：
 
 ```text
-用 deep-reading 看一下这本书有哪些章节，并建议阅读路线。
+用 Deepreader 看一下这本书有哪些章节，并建议阅读路线。
 ```
 
 或者：
@@ -270,7 +270,7 @@ AI 会读取 `book_map.md`、`metadata.json` 和 `reading-plan.md`，然后给�
 可以这样说：
 
 ```text
-用 deep-reading 带我读 ch01。先给我 5 个 read-for questions。
+用 Deepreader 带我读 ch01。先给我 5 个 read-for questions。
 ```
 
 ```text
@@ -502,4 +502,4 @@ PDF、EPUB、DOCX 等格式会根据本地依赖情况使用不同提取方式�
 - 每 3 章做一次综合。
 - 把真正有用的理解沉淀到 `chapter_notes/`、`evidence_cards.md`、`argument_maps.md`、`concept_map.md` 和 `review_cards.md`。
 
-一句话：脚本负责建立和维护阅读工作区，`deep-reading` skill 负责陪你读、问你问题、检查理解、沉淀笔记。
+一句话：脚本负责建立和维护阅读工作区，Deepreader 应用负责陪你读、问你问题、检查理解和沉淀笔记。

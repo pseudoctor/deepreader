@@ -61,7 +61,7 @@ const notarization = notarizationOptions.find((option) => namesPresent(option.na
 const signing = signingOptions.find((option) => namesPresent(option.names));
 const localIdentity = findDeveloperIdIdentity();
 
-console.log("Deep Reading macOS signing environment check");
+console.log("Deepreader macOS signing environment check");
 console.log("");
 
 if (signing) {

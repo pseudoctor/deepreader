@@ -155,7 +155,7 @@ async function verifyBackendRuntime(): Promise<string> {
 
   throw new Error(
     [
-      "Deep Reading could not find a Python runtime with the required backend modules.",
+      "Deepreader could not find a Python runtime with the required backend modules.",
       "Required imports: uvicorn and deep_reading.api.",
       "",
       "Checked:",
@@ -204,7 +204,7 @@ async function waitForBackend(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
 
-  throw new Error(`Deep Reading backend did not start at ${apiBaseUrl}`);
+  throw new Error(`Deepreader backend did not start at ${apiBaseUrl}`);
 }
 
 async function ensureBackend(): Promise<void> {
@@ -216,7 +216,7 @@ async function ensureBackend(): Promise<void> {
     }
     apiBaseUrl = explicitApiBaseUrl;
     if (await isBackendHealthy()) return;
-    throw new Error(`Configured Deep Reading backend is not reachable at ${apiBaseUrl}`);
+    throw new Error(`Configured Deepreader backend is not reachable at ${apiBaseUrl}`);
   }
 
   const backendPython = await verifyBackendRuntime();
@@ -282,7 +282,7 @@ function createWindow(): void {
     height: 820,
     minWidth: 980,
     minHeight: 640,
-    title: "Deep Reading",
+    title: "Deepreader",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -406,7 +406,7 @@ app.whenReady().then(async () => {
     await ensureBackend();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    dialog.showErrorBox("Deep Reading backend failed to start", message);
+    dialog.showErrorBox("Deepreader backend failed to start", message);
     console.error(error);
     app.quit();
     return;
