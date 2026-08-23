@@ -34,6 +34,7 @@ function prepareRuntime() {
 
   fs.rmSync(runtimeRoot, { recursive: true, force: true });
   fs.cpSync(basePrefix, runtimeRoot, { recursive: true, dereference: true });
+  fs.rmSync(path.join(runtimeRoot, "python3.exe"), { force: true });
 
   const runtimeSitePackages = path.join(runtimeRoot, "Lib", "site-packages");
   fs.rmSync(runtimeSitePackages, { recursive: true, force: true });
