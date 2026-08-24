@@ -3,35 +3,49 @@
 [![Checks](https://github.com/pseudoctor/deepreader/actions/workflows/check.yml/badge.svg?branch=main)](https://github.com/pseudoctor/deepreader/actions/workflows/check.yml)
 [![Windows Package](https://github.com/pseudoctor/deepreader/actions/workflows/windows-build.yml/badge.svg?branch=main)](https://github.com/pseudoctor/deepreader/actions/workflows/windows-build.yml)
 
-> 本地优先的 AI 深度阅读应用，帮助你理解、复述、提问、复习和应用书籍及长文档。
+> 本地优先的 AI 深度阅读工作区：把书籍和长文档变成可逐章阅读、追溯证据、主动回忆和持续复习的材料。
 
-当前版本：`0.0.1`
+Deepreader 将 Python 后端、Web 界面、Electron 桌面端和命令行工具放在同一个仓库中。源文件、阅读状态和笔记保存在本地；是否调用云端模型、调用哪个 Provider，由你的配置决定。
 
-Deepreader 将 Python 后端、Web 前端和 Electron 桌面端组合成一个可持续使用的阅读工作区。它强调主动阅读、证据绑定和个人理解沉淀，而不是一次性生成摘要。
+## 适合什么场景
 
-## 功能
+- 开始阅读一本书或一组长文档，需要先建立章节地图和阅读路线。
+- 逐章精读，希望用问题、复述和 Feynman 检查验证自己是否真正理解。
+- 需要把关键主张绑定到来源位置，而不是只保存一段脱离上下文的摘要。
+- 需要比较多本书、论文或笔记，整理概念、论证和证据之间的关系。
+- 想把阅读过程沉淀为 Markdown 笔记、复习卡片或 Obsidian 知识库。
 
-- 读前导览、章节精读和苏格拉底式提问
-- 费曼复述检查和主动回忆卡片
-- 证据绑定阅读卡、图尔敏论证分析和 X-Ray 深拆
-- 多书/多文档主题地图、概念图和跨章节综合
-- Markdown 笔记、复习材料和 Obsidian 导出
-- Local Mock、OpenAI、Claude、Gemini、DeepSeek、Qwen 等 Provider
-- Web、Electron 桌面端和 Python CLI
+## 能做什么
 
-## 下载
+### 阅读与理解
 
-### Windows
+- 初始化单个文件、目录或 glob 匹配到的多个来源。
+- 自动提取章节、生成阅读计划、章节笔记和阅读状态。
+- 逐章阅读、苏格拉底式提问、主动回忆和 Feynman 复述检查。
+- 对选中文本进行解释、追问和基于来源的证据检索。
 
-推送代码后，GitHub Actions 会在 Windows runner 上构建 `.exe`。打开 [Windows Package workflow](https://github.com/pseudoctor/deepreader/actions/workflows/windows-build.yml)，进入具体运行记录，从 `Artifacts → deep-reading-windows` 下载。
+### 证据与综合
 
-### macOS
+- 证据卡：主张、来源定位、支持说明、置信度、未明确内容和推断。
+- Toulmin 风格论证图：Claim、Grounds、Warrant、Backing、Qualifier 和 Rebuttal。
+- 证据表、概念图、全书一页总结、X-Ray 深拆和 Napkin 压缩。
+- 多源主题地图、跨章节综合、弱概念记录和间隔复习。
 
-macOS DMG 当前通过本地打包生成；构建命令和签名说明见[打包与发布](#打包与发布)。
+### 工作区与导出
+
+- Web、Electron 桌面端和 Python CLI 共用同一套阅读工作区格式。
+- 工作区使用 Markdown、JSON 和纯文本保存，便于检查、备份和版本控制。
+- 支持导出到 Obsidian，并保留章节笔记与内部链接。
 
 ## 快速开始
 
-### 启动桌面端
+### 环境要求
+
+- Python 3.11 或更高版本。
+- Node.js 和 npm；CI 使用 Node.js 22。
+- 运行 PDF 提取时，优先安装 Poppler 的 `pdftotext`；没有它时，程序会尝试可用的 Python PDF 解析器。
+
+### 安装开发依赖
 
 在仓库根目录执行：
 
@@ -39,261 +53,257 @@ macOS DMG 当前通过本地打包生成；构建命令和签名说明见[打包
 make install-dev
 npm ci --prefix apps/web
 npm ci --prefix apps/desktop
-make desktop-dev
 ```
 
-桌面端会启动自己的本地后端，并自动选择可用端口。
+`make install-dev` 会创建 `.venv` 并安装 Python 开发依赖。前端和桌面端依赖分别由两个 lockfile 管理。
 
 ### 启动 Web/API
 
-如果需要分别运行 API 和 Web：
+终端一：
 
 ```bash
-make install-dev
-npm ci --prefix apps/web
 make api-dev
+```
+
+终端二：
+
+```bash
 make web-dev
 ```
 
 默认地址：
 
-- API health check：<http://127.0.0.1:8000/health>
-- Web app：<http://127.0.0.1:5173/>
+- Web：<http://127.0.0.1:5173/>
+- API 健康检查：<http://127.0.0.1:8000/health>
 
-如需连接已有 API：
+Web 开发服务器会把 `/api` 请求代理到 `http://127.0.0.1:8000`。
+
+### 启动 Electron 桌面端
+
+桌面端开发模式需要 Web 开发服务器先运行：
 
 ```bash
-DEEP_READING_API_BASE_URL=http://127.0.0.1:8000 make desktop-dev
+make web-dev
 ```
 
-## 配置
+再打开另一个终端：
 
-Web 和桌面端都可以从顶部导航栏的 `Settings / 设置` 配置模型 Provider、Model、Base URL 和 API Key。
-
-- Web/API 本地开发设置写入 `.deep-reading-local/llm_settings.json`
-- 桌面端设置写入 Electron `userData` 目录下的 `llm_settings.json`
-- 这些位置已被 Git 忽略，API Key 不会写入源码
-- 推荐模型列表位于 `scripts/deep_reading/model_catalog.json`
-
-支持的 Provider：
-
-- Local Mock
-- OpenAI-compatible
-- Claude
-- Gemini
-- DeepSeek
-- Qwen
-
-## 使用流程
-
-### 1. 初始化阅读工作区
-
-可以在应用中操作，也可以让支持本地工具调用的 AI 执行：
-
-```text
-用 Deepreader 初始化这本书：~/Books/example.pdf
+```bash
+make desktop-dev
 ```
 
-工作区通常包含：
+桌面端会自动检查 `.venv` 中的后端依赖，启动一个本地 API，并选择可用端口。若设置了 `DEEP_READING_API_BASE_URL` 连接已有 API，则还必须设置 `DEEP_READING_API_TOKEN`；API 请求会通过 `X-Deep-Reading-API-Token` 校验。
 
-```text
-example-reading/
-├── metadata.json
-├── reading_state.json
-├── reading-plan.md
-├── book_map.md
-├── chapter_notes/
-├── questions.md
-├── concept_map.md
-├── review_cards.md
-├── evidence_cards.md
-├── argument_maps.md
-├── xray_notes.md
-├── napkin.md
-├── multi_source_map.md
-└── source_text/full_text.txt
+## 第一次阅读
+
+### 1. 创建工作区
+
+CLI 支持文件、目录和 glob。使用仓库创建的虚拟环境运行：
+
+```bash
+.venv/bin/python scripts/reading_workspace.py init \
+  ~/Books/example.pdf \
+  --workspace ~/Books/example-reading
 ```
+
+Windows PowerShell 对应命令：
+
+```powershell
+.venv\Scripts\python.exe scripts\reading_workspace.py init `
+  "$HOME\Books\example.pdf" `
+  --workspace "$HOME\Books\example-reading"
+```
+
+初始化会生成来源元数据、全文、章节状态、阅读计划、章节笔记、问题、概念图、复习卡、证据卡、论证图、X-Ray、Napkin、多源地图和 `library.json`。完整的工作区标记与生成逻辑见 [`scripts/deep_reading/workspace.py`](scripts/deep_reading/workspace.py)。
+
+也可以直接在 Web 或桌面端选择来源文件和工作区目录创建。
 
 ### 2. 选择阅读路线
 
-```text
-用 Deepreader 看一下这本书有哪些章节，并建议阅读路线。
+先查看工作区状态和章节列表：
+
+```bash
+WORKSPACE=~/Books/example-reading
+
+.venv/bin/python scripts/reading_workspace.py status "$WORKSPACE"
+.venv/bin/python scripts/reading_workspace.py list "$WORKSPACE"
 ```
 
-### 3. 章节陪读
+根据目标选择路线：
 
-推荐每章按以下顺序推进：
+| 目标 | 建议顺序 |
+| --- | --- |
+| 快速建立全貌 | `status` → `source` → `chapter` |
+| 深度学习 | 章节阅读 → 问题 → 自己复述 → Feynman 检查 → 复习卡 |
+| 研究或写作 | 章节阅读 → 证据卡 → 论证图 → 证据核验 |
+| 多书比较 | 分别初始化工作区 → `library` → 多源地图 → 冲突与证据缺口 |
+| 结构提取 | `template xray` → 深拆 → `template napkin` |
 
-1. AI 提出读前问题。
-2. 你阅读章节原文或相关摘录。
-3. AI 解释核心问题和论证结构。
-4. AI 进行苏格拉底式提问。
-5. 你用 3–5 句话复述。
-6. AI 做费曼复述检查。
-7. 双方沉淀章节笔记和复习卡片。
+不要把章节标题或自动提取结果当成完整理解；先用它们确定下一段要读什么，再回到原文核对。
 
-示例：
+### 3. 逐章阅读
+
+推荐每章按这个循环推进：
+
+1. 先回答本章要解决什么问题。
+2. 带着 3–7 个 read-for questions 阅读原文。
+3. 提取主张、概念、证据、假设和边界。
+4. 不看原文复述 3–5 句话。
+5. 用 Feynman 检查找出模糊点、缺失因果链和无依据跳跃。
+6. 保存证据卡、章节笔记和下一次复习的问题。
+
+示例请求：
 
 ```text
 用 Deepreader 带我读 ch01，先给我 5 个 read-for questions。
 ```
 
 ```text
-这是我对 ch01 的总结：…… 请用 Feynman check 帮我纠偏。
+这是我对 ch01 的总结：…… 请做 Feynman check，指出缺失的因果链。
 ```
 
-### 4. 沉淀和综合
+## AI Provider 配置
 
-读完一章后，可以更新：
+Web 和桌面端都可以从顶部的 `Settings / 设置` 配置 Provider、Model、Base URL 和 API Key。可用 Provider 由 `scripts/deep_reading/llm.py` 中的 `PROVIDER_SPECS` 定义，推荐模型目录位于 [`scripts/deep_reading/model_catalog.json`](scripts/deep_reading/model_catalog.json)。
 
-- `chapter_notes/`
-- `questions.md`
-- `review_cards.md`
-- `concept_map.md`
-- `personal_insights.md`
-- `evidence_cards.md`
-
-每读完几章，可以继续请求：
-
-```text
-基于 ch01 到 ch03，帮我总结作者目前的核心论证链条。
-```
-
-```text
-把 ch05 的思想应用到我当前的数据库设计里，区分书中原意和你的推断。
-```
-
-## 高级阅读模式
-
-| 模式 | 适用场景 | 主要产物 |
+| Provider | API Key 环境变量 | 说明 |
 | --- | --- | --- |
-| 证据绑定阅读 | 学术书、技术书、争议性观点 | `evidence_cards.md` |
-| 图尔敏论证分析 | 哲学、管理、政策和理论书 | `argument_maps.md` |
-| X-Ray 深拆 | 章节、部分或整本书的结构提取 | `xray_notes.md` |
-| 餐巾纸压缩 | 对 X-Ray 结果做极限压缩 | `napkin.md` |
-| 多源主题地图 | 比较多本书、论文或笔记 | `multi_source_map.md` |
+| Local Mock | 无 | 不需要远程 API，适合本地开发和界面验证。 |
+| OpenAI | `OPENAI_API_KEY` | 默认使用 OpenAI 兼容接口配置。 |
+| Claude | `ANTHROPIC_API_KEY` | 使用 Anthropic API。 |
+| Gemini | `GEMINI_API_KEY` | 使用 Google Generative Language API。 |
+| DeepSeek | `DEEPSEEK_API_KEY` | 支持自定义 Base URL。 |
+| Qwen | `QWEN_API_KEY` | 支持 DashScope 兼容接口。 |
 
-示例：
-
-```text
-为 ch02 的核心观点生成 evidence cards，每条都要有 source locator、support、confidence 和 not explicit。
-```
-
-```text
-用 Toulmin model 分析 ch03 的核心论证，并指出隐含假设和弱点。
-```
-
-## 笔记与 Obsidian
-
-阅读过程中可以追加结构化笔记：
-
-```bash
-python3 scripts/reading_workspace.py note <workspace> ch01 --section "Confusions" --text "这里记录困惑"
-python3 scripts/reading_workspace.py insight <workspace> --text "这里记录个人启发"
-python3 scripts/reading_workspace.py review-card <workspace> --question "问题" --answer "答案"
-python3 scripts/reading_workspace.py evidence <workspace> --claim "主张" --locator "ch01/page 3" --support "证据说明" --confidence Medium
-```
-
-导出到 Obsidian：
-
-```bash
-python3 scripts/reading_workspace.py export-obsidian <workspace> --vault-folder ~/ObsidianVault/Reading/example
-```
-
-该命令会复制 Markdown 笔记、保留目录结构，并生成 `index.md` 入口页。
+默认的 Web/API 设置写入被 Git 忽略的 `.deep-reading-local/llm_settings.json`。桌面端将设置写入 Electron 的 `userData` 目录。不要把 API Key 写进源码、README 或提交记录。
 
 ## CLI 参考
 
-以下命令从仓库根目录运行：
-
-<details>
-<summary>展开 CLI 命令</summary>
-
-初始化和状态：
+显示所有命令：
 
 ```bash
-python3 scripts/reading_workspace.py init ~/Books/example.pdf --workspace ~/Books/example-reading
-python3 scripts/reading_workspace.py list ~/Books/example-reading
-python3 scripts/reading_workspace.py status ~/Books/example-reading
-python3 scripts/reading_workspace.py chapter ~/Books/example-reading ch01
-python3 scripts/reading_workspace.py source ~/Books/example-reading
-python3 scripts/reading_workspace.py library ~/Books/example-reading
+.venv/bin/python scripts/reading_workspace.py --help
 ```
 
-模板和章节状态：
+常用命令：
+
+| 命令 | 用途 |
+| --- | --- |
+| `init <source>` | 提取来源并创建阅读工作区。 |
+| `status <workspace>` | 查看来源、字数、章节进度和主要产物。 |
+| `list <workspace>` | 以表格形式列出章节及状态。 |
+| `source <workspace>` | 查看来源处理记录。 |
+| `library <workspace>` | 查看工作区的来源库信息。 |
+| `chapter <workspace> <chapter-id>` | 输出章节笔记。 |
+| `chapter-text <workspace> <chapter-id>` | 输出章节原文。 |
+| `mark <workspace> <chapter-id> --state <state>` | 更新章节状态。可用状态包括 `not-started`、`reading`、`done`、`review` 和 `weak`。 |
+| `template <workspace> <name>` | 输出 `evidence`、`argument`、`xray`、`napkin`、`review` 或 `concept` 模板。 |
+| `note <workspace> <chapter-id>` | 添加章节笔记。 |
+| `insight <workspace>` | 添加个人启发。 |
+| `review-card <workspace>` | 添加问题和答案形式的复习卡。 |
+| `evidence <workspace>` | 添加带 locator 和 confidence 的证据卡。 |
+| `export-obsidian <workspace>` | 将工作区导出到指定 Obsidian 文件夹。 |
+
+示例：
 
 ```bash
-python3 scripts/reading_workspace.py template ~/Books/example-reading evidence
-python3 scripts/reading_workspace.py template ~/Books/example-reading argument
-python3 scripts/reading_workspace.py template ~/Books/example-reading xray
-python3 scripts/reading_workspace.py template ~/Books/example-reading napkin
-python3 scripts/reading_workspace.py mark ~/Books/example-reading ch01 --state reading
-python3 scripts/reading_workspace.py mark ~/Books/example-reading ch01 --state done
-python3 scripts/reading_workspace.py mark ~/Books/example-reading ch01 --state review
+.venv/bin/python scripts/reading_workspace.py mark "$WORKSPACE" ch01 --state reading
+
+.venv/bin/python scripts/reading_workspace.py note "$WORKSPACE" ch01 \
+  --section "Confusions" \
+  --text "记录这里没有解释清楚的概念"
+
+.venv/bin/python scripts/reading_workspace.py evidence "$WORKSPACE" \
+  --claim "作者关于反馈循环的主张" \
+  --locator "ch01 / section 2" \
+  --support "用自己的话记录支持理由" \
+  --confidence Medium \
+  --not-explicit "作者没有直接说明的边界" \
+  --inference "我的推断"
+
+.venv/bin/python scripts/reading_workspace.py export-obsidian "$WORKSPACE" \
+  --vault-folder ~/ObsidianVault/Reading/example
 ```
 
-</details>
+## 支持的来源格式
 
-## 支持格式
+当前支持：
 
 - PDF
 - EPUB
 - DOCX
-- TXT
-- Markdown
-- HTML
+- TXT / TEXT
+- Markdown：`MD` / `MARKDOWN`
+- HTML：`HTML` / `HTM`
 - RTF
 
-解析会根据本地依赖选择不同实现；缺少高质量解析库时会使用 fallback。
+可以传入一个文件、目录或 glob。目录会递归查找支持的扩展名；无法提取的来源会记录在工作区的 `sources.md`，而不是静默消失。
 
 ## 开发与验证
 
-主要目录：
+目录职责：
 
 ```text
-apps/web/       # React + Vite 前端
+apps/web/       # React + Vite Web 界面
 apps/desktop/   # Electron 桌面端
-scripts/        # Python 后端和 CLI
+scripts/        # Python 后端、CLI 和工作区逻辑
 tests/          # Python 测试
+references/     # 阅读流程和输出模板
 ```
 
 常用命令：
 
 ```bash
-make lint    # Ruff 静态检查
-make format  # Ruff 格式化
-make test    # Python 测试
-make check   # Python + Web + Desktop 验证
-make clean   # 清理本地虚拟环境和测试缓存
+make lint      # Ruff 静态检查
+make format    # Ruff 格式化
+make test      # Python 测试
+make check     # Python、Web 和桌面端验证
+make clean     # 清理本地虚拟环境和测试缓存
 ```
 
-GitHub Actions 会在 push 和 pull request 时运行 `.github/workflows/check.yml`。
+CI 在 push 和 pull request 时运行 [`make check`](.github/workflows/check.yml)。如果只改 Python，优先运行 `make lint` 和 `make test`；如果改了 Web 或 Electron，再运行 `make check`。
 
-## 打包与发布
+## 打包
 
-### macOS DMG
+### macOS
+
+构建未签名的目录包：
+
+```bash
+make desktop-package-mac
+```
+
+构建 DMG 和 ZIP：
 
 ```bash
 make desktop-dist-mac
 ```
 
-产物位于 `apps/desktop/release/*.dmg`。当前未配置 Apple Developer ID，DMG 未签名。
+产物写入 `apps/desktop/release/`。macOS 打包配置启用了 notarization，并需要对应的 Apple Developer 配置；没有配置时请先检查：
 
-### Windows EXE
+```bash
+make desktop-signing-check
+```
 
-推荐推送后使用 [Windows Package workflow](https://github.com/pseudoctor/deepreader/actions/workflows/windows-build.yml) 构建，并从 Actions artifact 下载。
+### Windows
 
-Windows 本机打包：
+本地构建 NSIS 安装包：
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e .
-npm ci --prefix apps/web
-npm ci --prefix apps/desktop
-npm run dist:win --prefix apps/desktop
+.venv\Scripts\python.exe -m pip install -e ".[dev]"
+npm ci --prefix apps\web
+npm ci --prefix apps\desktop
+npm run dist:win --prefix apps\desktop
 ```
 
-产物位于 `apps/desktop/release/*.exe`，当前版本的文件名以 `Deepreader-0.0.1` 开头。`release/` 已被 Git 忽略，不会随源码提交。
+也可以推送代码后使用 [Windows Package workflow](https://github.com/pseudoctor/deepreader/actions/workflows/windows-build.yml)，从运行记录的 `Artifacts → deep-reading-windows` 下载构建产物。
+
+所有产物都写入 `apps/desktop/release/`，文件名由 `apps/desktop/package.json` 的 `artifactName` 规则生成，不要在文档中手工记录某个版本号。
+
+## Agent 集成
+
+仓库根目录的 [`SKILL.md`](SKILL.md) 是面向 AI agent 的深度阅读工作流说明，规定了主动阅读、证据绑定、论证分析、复习和应用阅读的边界。它与应用代码共享同一套工作区和 CLI 入口。
 
 ## License
 
